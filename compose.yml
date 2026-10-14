@@ -13,6 +13,10 @@ services:
     container_name: deadlock-analytics
     restart: unless-stopped
     env_file: .env
+    environment:
+      # Tracked players' matches come through the Steam bot below; deadlock-api is the
+      # fallback while it isn't logged in or can't see a player.
+      FETCHER_URL: http://fetcher:8001
     volumes:
       - deadlock_data:/data
     networks:

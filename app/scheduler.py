@@ -9,15 +9,17 @@ from . import jobs
 from .api import DeadlockApi
 from .config import Settings
 from .db import connect
+from .fetcher import Fetcher
 
 log = logging.getLogger(__name__)
 TICK_S = 30
 
 
 class Scheduler:
-    def __init__(self, settings: Settings, api: DeadlockApi):
+    def __init__(self, settings: Settings, api: DeadlockApi, fetcher: Fetcher | None = None):
         self.settings = settings
         self.api = api
+        self.fetcher = fetcher
         self.sync_requested = threading.Event()  # "sync every account now"
         self._wake = threading.Event()  # cut the idle wait short
         self._stop = threading.Event()
@@ -56,7 +58,7 @@ class Scheduler:
                     break
                 account_id = self._running = self._pending.pop()
             try:
-                jobs.sync_account_safely(conn, self.api, account_id, self.settings, full=True)
+                jobs.sync_account_safely(conn, self.api, account_id, self.settings, full=True, fetcher=self.fetcher)
             finally:
                 with self._lock:
                     self._running = None
@@ -87,7 +89,7 @@ class Scheduler:
                     continue  # an account re-pull arrived meanwhile; serve it first
                 if self.sync_requested.is_set() or self._due(conn, "sync", self.settings.sync_interval_s):
                     self.sync_requested.clear()
-                    jobs.sync_all_accounts(conn, self.api, self.settings)
+                    jobs.sync_all_accounts(conn, self.api, self.settings, self.fetcher)
             except Exception:
                 log.exception("scheduled job failed; retrying next tick")
             # Clearing right after waking is safe: anything requested in between is still in

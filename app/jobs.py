@@ -11,6 +11,7 @@ from . import scoring
 from .api import DeadlockApi
 from .config import Settings
 from .db import transaction
+from .fetcher import Fetcher, FetcherError
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +24,10 @@ SYNC_LOOKBACK_S = 2 * 86400
 # re-reads the account's full history instead of only the lookback window.
 FULL_RESYNC_S = 86400
 TEAMS = {"Team0": 0, "Team1": 1}
+NORMAL_GAME_MODE = 1  # Valve's ECitadelGameMode; the same matches deadlock-api's game_mode=normal returns
+# Fetcher errors for one match that shouldn't fail the account's sync: the match is still being
+# processed (next sync gets it), or Valve no longer has it.
+SKIPPABLE_MATCH_ERRORS = {"in_flight", "gone", "invalid_match", "download_failed"}
 
 
 def _unix(value) -> int:
@@ -90,10 +95,70 @@ def _record(conn, job: str, started: int, error: str | None) -> None:
 
 
 def sync_account(
-    conn: sqlite3.Connection, api: DeadlockApi, account_id: int, settings: Settings, full: bool = False
+    conn: sqlite3.Connection,
+    api: DeadlockApi,
+    account_id: int,
+    settings: Settings,
+    full: bool = False,
+    fetcher: Fetcher | None = None,
 ) -> int:
-    """Fetch the account's matches since its last sync (with lookback), or its whole history
-    once a day. Returns matches stored."""
+    """Fetch the account's new matches. Returns matches stored.
+
+    Through the Steam bot when one is configured: it sees the player's complete history.
+    Otherwise, or when the bot can't read this player, from deadlock-api, which only has the
+    matches it happened to collect; the reason is then kept in the account's last_error."""
+    fallback_reason = None
+    if fetcher is not None:
+        try:
+            return _sync_from_fetcher(conn, fetcher, account_id, settings)
+        except FetcherError as exc:
+            log.warning("Steam bot sync failed for %s (%s); using deadlock-api", account_id, exc)
+            fallback_reason = f"Steam bot: {exc} (used deadlock-api instead)"
+    return _sync_from_api(conn, api, account_id, settings, full, fallback_reason)
+
+
+def _sync_from_fetcher(conn: sqlite3.Connection, fetcher: Fetcher, account_id: int, settings: Settings) -> int:
+    """Read the full match history from Valve and download the matches not stored yet."""
+    started = int(time.time())
+    fetcher.ensure_ready()
+    have = {r[0] for r in conn.execute("SELECT match_id FROM match_players WHERE account_id = ?", (account_id,))}
+    wanted = sorted(
+        m["match_id"]
+        for m in fetcher.history(account_id)
+        if m["game_mode"] == NORMAL_GAME_MODE and m["start_time"] >= settings.backfill_since
+    )
+    stored = 0
+    for match_id in wanted:
+        if match_id in have:
+            continue
+        try:
+            match = fetcher.match(match_id)
+        except FetcherError as exc:
+            if exc.code not in SKIPPABLE_MATCH_ERRORS:
+                raise
+            log.info("skipping match %s of %s: %s", match_id, account_id, exc)
+            continue
+        with transaction(conn):
+            store_match(conn, match)
+        stored += 1
+    with transaction(conn):
+        conn.execute(
+            """UPDATE accounts SET last_synced_at = ?, last_full_sync_at = ?, last_error = NULL,
+                 last_source = 'Steam bot' WHERE account_id = ?""",
+            (started, started, account_id),
+        )
+    return stored
+
+
+def _sync_from_api(
+    conn: sqlite3.Connection,
+    api: DeadlockApi,
+    account_id: int,
+    settings: Settings,
+    full: bool,
+    note: str | None = None,
+) -> int:
+    """The account's matches since its last sync (with lookback), or its whole history once a day."""
     row = conn.execute(
         "SELECT last_synced_at, last_full_sync_at FROM accounts WHERE account_id = ?", (account_id,)
     ).fetchone()
@@ -123,20 +188,25 @@ def sync_account(
         min_match_id = page[-1]["match_id"] + 1
     with transaction(conn):
         conn.execute(
-            """UPDATE accounts SET last_synced_at = ?, last_error = NULL,
+            """UPDATE accounts SET last_synced_at = ?, last_error = ?, last_source = 'deadlock-api',
                  last_full_sync_at = CASE WHEN ? THEN ? ELSE last_full_sync_at END
                WHERE account_id = ?""",
-            (started, full, started, account_id),
+            (started, note, full, started, account_id),
         )
     return stored
 
 
 def sync_account_safely(
-    conn: sqlite3.Connection, api: DeadlockApi, account_id: int, settings: Settings, full: bool = False
+    conn: sqlite3.Connection,
+    api: DeadlockApi,
+    account_id: int,
+    settings: Settings,
+    full: bool = False,
+    fetcher: Fetcher | None = None,
 ) -> str | None:
     """sync_account, but a failure is logged and stored on the account instead of raised."""
     try:
-        n = sync_account(conn, api, account_id, settings, full=full)
+        n = sync_account(conn, api, account_id, settings, full=full, fetcher=fetcher)
         log.info("synced account %s%s: %s matches", account_id, " (full)" if full else "", n)
         return None
     except Exception as exc:
@@ -146,11 +216,14 @@ def sync_account_safely(
         return f"{account_id}: {exc}"
 
 
-def sync_all_accounts(conn: sqlite3.Connection, api: DeadlockApi, settings: Settings) -> None:
+def sync_all_accounts(
+    conn: sqlite3.Connection, api: DeadlockApi, settings: Settings, fetcher: Fetcher | None = None
+) -> None:
     started = int(time.time())
     errors = []
     for (account_id,) in conn.execute("SELECT account_id FROM accounts ORDER BY account_id").fetchall():
-        if error := sync_account_safely(conn, api, account_id, settings):  # keep going with the others
+        # keep going with the others
+        if error := sync_account_safely(conn, api, account_id, settings, fetcher=fetcher):
             errors.append(error)
     try:
         refresh_profiles(conn, api)

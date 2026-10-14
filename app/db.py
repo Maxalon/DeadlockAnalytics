@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     avatar_url      TEXT,
     last_synced_at  INTEGER,
     last_full_sync_at INTEGER,
+    last_source     TEXT,                         -- where the last sync read matches from
     last_error      TEXT
 );
 
@@ -96,6 +97,8 @@ def init(conn: sqlite3.Connection) -> None:
     columns = {r["name"] for r in conn.execute("PRAGMA table_info(accounts)")}
     if "last_full_sync_at" not in columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN last_full_sync_at INTEGER")
+    if "last_source" not in columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN last_source TEXT")
     conn.commit()
 
 
