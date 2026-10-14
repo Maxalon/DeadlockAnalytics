@@ -48,8 +48,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    # Runs on GitHub's runners: joins the tailnet as an ephemeral tag:ci node, then SSHes to
-    # the box as `deploy`, whose key can only run deploy/remote-deploy.sh (forced command).
+    # Runs on GitHub's runners: joins the tailnet as an ephemeral tag:deadlock-deploy node
+    # (a dedicated tag whose only grant is SSH to the box), then SSHes in as `deploy`, whose
+    # key can only run deploy/remote-deploy.sh (forced command).
     # Secrets live in the `production` environment, which only main may use.
     # Until they are configured this job skips itself instead of failing.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -80,7 +81,7 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
+          tags: tag:deadlock-deploy
           ping: ${{ vars.DEPLOY_HOST }}
       - name: Deploy over SSH
         if: steps.cfg.outputs.enabled == 'true'

@@ -55,24 +55,40 @@ public; if you make it private, add a read-only GitHub deploy key for the `deplo
 ### Option A: push deploy from CI over Tailscale (about 1 min after merge)
 
 The `deploy` job in `.github/workflows/ci.yml` runs after the image is pushed. It:
-1. joins the tailnet as an ephemeral `tag:ci` node (`tailscale/github-action`);
+1. joins the tailnet as an ephemeral `tag:deadlock-deploy` node (`tailscale/github-action`);
 2. SSHes to the box as `deploy`.
 
 That key's `authorized_keys` entry forces `deploy/remote-deploy.sh`, which only fast-forwards
 this checkout to `origin/main`, pulls the image, recreates the container and waits for the
 healthcheck. The client cannot run anything else.
 
-**Tailscale** (admin console):
-- In the policy file, make sure there is no allow-all rule with `"src": ["*"]`. Use
-  `autogroup:member` for your own devices, so tagged nodes only get what is granted below.
-- Add:
-  ```json
-  "tagOwners": { "tag:ci": ["autogroup:admin"] },
-  "hosts":     { "homebox": "100.x.y.z" },
-  "grants":    [ { "src": ["tag:ci"], "dst": ["homebox"], "ip": ["tcp:22"] } ]
-  ```
-- Under *Settings → Trust credentials*, create an OAuth client with the **Auth Keys: Write**
-  scope and tag `tag:ci`.
+**Tailscale** (admin console). Anything else on your tailnet must keep working, so the
+policy changes only add a narrowly scoped tag for this job:
+
+1. Use a **new tag, `tag:deadlock-deploy`**. Don't reuse an existing `tag:ci`: it may already
+   carry grants from earlier setups, and this job would inherit them.
+2. Add it, plus the one grant it needs:
+   ```json
+   "tagOwners": { "tag:deadlock-deploy": ["autogroup:admin"] },
+   "hosts":     { "homebox": "100.x.y.z" },
+   "grants":    [ { "src": ["tag:deadlock-deploy"], "dst": ["homebox"], "ip": ["tcp:22"] } ]
+   ```
+   Merge these into your existing sections rather than replacing them.
+3. **Only if** the policy still has the default allow-all rule (`"src": ["*"]`): grants only
+   ever add access, so `*` would also hand the new tag your whole tailnet. Replace `"*"` with
+   what it covers today **minus the new tag**: `"autogroup:member"`, plus every tag already in
+   use (see *Machines*, filtered by tag, or your `tagOwners`), plus `"autogroup:shared"` if
+   you share devices with other tailnets. Every existing device keeps exactly the access it
+   has now. If there is no allow-all rule, skip this step.
+4. Add `tests`. The admin console refuses to save a policy that fails them:
+   ```json
+   "tests": [
+     { "src": "tag:deadlock-deploy", "accept": ["homebox:22"], "deny": ["homebox:443", "homebox:80"] }
+   ]
+   ```
+   Add a line for each other flow you rely on, so a later edit can't silently break it.
+5. Under *Settings → Trust credentials*, create a **new** OAuth client with the
+   **Auth Keys: Write** scope and tag `tag:deadlock-deploy`.
 
 **Box:**
 - Generate a key pair: `ssh-keygen -t ed25519 -f deadlock-deploy -N "" -C github-deploy`.
