@@ -1,5 +1,5 @@
 # Pull the newest image from GHCR and recreate the container if it changed.
-# Option B in README "Deploy". Assumes the repo is checked out at /srv/deadlockanalytics
+# Assumes the repo is checked out at /srv/deadlockanalytics
 # by the `deadlock-deploy` user (in the docker group), which also holds the GHCR login if needed.
 [Unit]
 Description=Update Deadlock Analytics container
