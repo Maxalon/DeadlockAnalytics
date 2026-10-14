@@ -112,28 +112,46 @@ def sync_account(
         try:
             return _sync_from_fetcher(conn, fetcher, account_id, settings)
         except FetcherError as exc:
+            if exc.code == "rate_limited":
+                # Temporary, and the bot will get there: deadlock-api would only add a partial view.
+                log.info("Steam rate limit while reading %s's history; next sync continues", account_id)
+                with transaction(conn):
+                    conn.execute(
+                        "UPDATE accounts SET last_error = ? WHERE account_id = ?",
+                        ("Steam rate limit; trying again with the next sync", account_id),
+                    )
+                return 0
             log.warning("Steam bot sync failed for %s (%s); using deadlock-api", account_id, exc)
             fallback_reason = f"Steam bot: {exc} (used deadlock-api instead)"
     return _sync_from_api(conn, api, account_id, settings, full, fallback_reason)
 
 
 def _sync_from_fetcher(conn: sqlite3.Connection, fetcher: Fetcher, account_id: int, settings: Settings) -> int:
-    """Read the full match history from Valve and download the matches not stored yet."""
+    """Read the full match history from Valve and download the matches not stored yet, newest
+    first. Steam limits how fast one account may fetch matches: on its rate limit the sync keeps
+    what it has, and the next sync continues where this one stopped."""
     started = int(time.time())
     fetcher.ensure_ready()
     have = {r[0] for r in conn.execute("SELECT match_id FROM match_players WHERE account_id = ?", (account_id,))}
-    wanted = sorted(
-        m["match_id"]
-        for m in fetcher.history(account_id)
-        if m["game_mode"] == NORMAL_GAME_MODE and m["start_time"] >= settings.backfill_since
+    missing = sorted(
+        (
+            m["match_id"]
+            for m in fetcher.history(account_id)
+            if m["game_mode"] == NORMAL_GAME_MODE
+            and m["start_time"] >= settings.backfill_since
+            and m["match_id"] not in have
+        ),
+        reverse=True,
     )
-    stored = 0
-    for match_id in wanted:
-        if match_id in have:
-            continue
+    stored, pending = 0, 0
+    for i, match_id in enumerate(missing):
         try:
             match = fetcher.match(match_id)
         except FetcherError as exc:
+            if exc.code == "rate_limited":
+                pending = len(missing) - i
+                log.info("Steam rate limit for %s: %s matches left for the next sync", account_id, pending)
+                break
             if exc.code not in SKIPPABLE_MATCH_ERRORS:
                 raise
             log.info("skipping match %s of %s: %s", match_id, account_id, exc)
@@ -144,8 +162,8 @@ def _sync_from_fetcher(conn: sqlite3.Connection, fetcher: Fetcher, account_id: i
     with transaction(conn):
         conn.execute(
             """UPDATE accounts SET last_synced_at = ?, last_full_sync_at = ?, last_error = NULL,
-                 last_source = 'Steam bot' WHERE account_id = ?""",
-            (started, started, account_id),
+                 last_source = 'Steam bot', pending_matches = ? WHERE account_id = ?""",
+            (started, started, pending or None, account_id),
         )
     return stored
 
@@ -189,7 +207,7 @@ def _sync_from_api(
     with transaction(conn):
         conn.execute(
             """UPDATE accounts SET last_synced_at = ?, last_error = ?, last_source = 'deadlock-api',
-                 last_full_sync_at = CASE WHEN ? THEN ? ELSE last_full_sync_at END
+                 pending_matches = NULL, last_full_sync_at = CASE WHEN ? THEN ? ELSE last_full_sync_at END
                WHERE account_id = ?""",
             (started, note, full, started, account_id),
         )
