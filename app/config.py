@@ -20,6 +20,8 @@ class Settings:
     api_base: str = field(default_factory=lambda: os.environ.get("DEADLOCK_API_BASE", "https://api.deadlock-api.com"))
     # Optional; raises the deadlock-api rate limits. Sent as X-API-KEY.
     api_key: str = field(default_factory=lambda: os.environ.get("DEADLOCK_API_KEY", ""))
+    # The fetcher service (Steam bot), e.g. http://fetcher:8001. Empty: deadlock-api only.
+    fetcher_url: str = field(default_factory=lambda: os.environ.get("FETCHER_URL", "").strip())
     # Accounts added on first start (SteamID3 or SteamID64). More can be added in the UI.
     seed_account_ids: list[int] = field(default_factory=lambda: _ids("TRACKED_ACCOUNT_IDS"))
     # How often tracked accounts are checked for new matches.

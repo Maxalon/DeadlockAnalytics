@@ -13,18 +13,20 @@ What it shows, per tracked account:
 
 ## How it works
 
-One container: a FastAPI app with server-rendered pages and a background thread, plus a SQLite
-file on a volume.
+A FastAPI app with server-rendered pages and a background thread, plus a SQLite file on a
+volume. Optionally a second container, the fetcher (`fetcher/`), reads tracked players' matches
+from Valve through a Steam account of your own that the players add as a friend.
 
 | Job | Default interval | What it does |
 |---|---|---|
-| Account sync | 15 min | Fetches new matches of every tracked account (all 12 players) from `api.deadlock-api.com/v1/matches/metadata` |
+| Account sync | 15 min | Fetches new matches of every tracked account (all 12 players) through the fetcher, or from `api.deadlock-api.com/v1/matches/metadata` without one |
 | Hero baselines | daily | Samples 30,000 recent matches spread over the last 7 days and stores per-hero mean/SD for each scored stat |
 | Heroes / profiles | daily / each sync | Hero names and icons; Steam persona names and avatars |
 
 Each match is scored against the baseline snapshot computed right after it, so old matches
-keep the baselines of their own patch. Data source: [deadlock-api.com](https://deadlock-api.com).
-Matches usually appear there 30–90 minutes after they end.
+keep the baselines of their own patch. Baselines always come from
+[deadlock-api.com](https://deadlock-api.com). Without the fetcher, tracked matches do too, but
+it only has the matches it happened to collect, usually 30–90 minutes after they end.
 
 Accounts: set `TRACKED_ACCOUNT_IDS` for the first start, then add or remove accounts at
 `/accounts` (SteamID3, SteamID64 or a `steamcommunity.com/profiles/…` link). There is no
@@ -41,6 +43,10 @@ docker compose up -d
 
 `compose.yml` publishes no ports: it joins an external Docker network named `edge` for a
 reverse proxy. Adjust that to your setup. Data lives in the `deadlock_data` volume.
+
+The fetcher needs a Steam account with Deadlock access, logged in once with
+`docker compose run --rm -it fetcher npm run login`; tracked players then add it as a friend.
+Until then the site falls back to deadlock-api, and `/accounts` shows which source each sync used.
 
 To keep the container up to date, either enable the systemd timer in `deploy/`, or use the
 optional `deploy` job in CI, which runs `deploy/remote-deploy.sh` on the host over SSH. That job

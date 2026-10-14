@@ -17,6 +17,7 @@ from . import charts, queries, scoring
 from .api import DeadlockApi
 from .config import Settings
 from .db import connect, init, transaction
+from .fetcher import Fetcher
 from .scheduler import Scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -24,7 +25,9 @@ HERE = Path(__file__).parent
 PAGE_SIZE = 50
 
 
-def create_app(settings: Settings | None = None, api: DeadlockApi | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None, api: DeadlockApi | None = None, fetcher: Fetcher | None = None
+) -> FastAPI:
     settings = settings or Settings()
     setup = connect(settings.database_path)
     init(setup)
@@ -36,7 +39,9 @@ def create_app(settings: Settings | None = None, api: DeadlockApi | None = None)
             )
     if settings.database_path != ":memory:":
         setup.close()
-    scheduler = Scheduler(settings, api or DeadlockApi(settings.api_base, settings.api_key))
+    if fetcher is None and settings.fetcher_url:
+        fetcher = Fetcher(settings.fetcher_url)
+    scheduler = Scheduler(settings, api or DeadlockApi(settings.api_base, settings.api_key), fetcher)
     local = threading.local()
 
     def db():

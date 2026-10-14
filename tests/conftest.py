@@ -69,3 +69,35 @@ def stored_match(conn, match_payload):
     with dbmod.transaction(conn):
         jobs.store_match(conn, match_payload[0])
     return match_payload[0]
+
+
+@pytest.fixture
+def fetcher_match():
+    """Match 115701682 as the fetcher returns it (decoded from Valve's match file)."""
+    return json.loads((FIXTURES / "fetcher_match_115701682.json").read_text())
+
+
+class FakeFetcher:
+    """Stands in for app.fetcher.Fetcher."""
+
+    def __init__(self, history=(), matches=None, ready=True, errors=None):
+        self._history = list(history)
+        self.matches = dict(matches or {})
+        self.ready = ready
+        self.errors = dict(errors or {})  # match_id -> FetcherError
+        self.fetched = []
+
+    def ensure_ready(self):
+        from app.fetcher import FetcherError
+
+        if not self.ready:
+            raise FetcherError("not_ready", "Steam bot not ready: not logged in")
+
+    def history(self, account_id):
+        return self._history
+
+    def match(self, match_id):
+        self.fetched.append(match_id)
+        if match_id in self.errors:
+            raise self.errors[match_id]
+        return self.matches[match_id]
