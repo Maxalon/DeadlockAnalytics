@@ -5,9 +5,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { decodeMetadataFile } = require('../src/metadata');
 
-// Match 115701682 as Valve serves it (bzip2). Expected values are the ones deadlock-api
-// returns for this match (see research/mvp-115701682).
-const match = decodeMetadataFile(fs.readFileSync(path.join(__dirname, 'fixtures', '115701682.meta.bz2')));
+// Match 115701682 as Valve serves it (zstd, despite the name). Expected values are the ones
+// deadlock-api returns for this match (see research/mvp-115701682).
+const fixture = (name) => fs.readFileSync(path.join(__dirname, 'fixtures', name));
+const match = decodeMetadataFile(fixture('115701682.meta.bz2'));
+
+test('bzip2-compressed files decode to the same match', () => {
+  assert.deepStrictEqual(decodeMetadataFile(fixture('115701682.bzip2.meta.bz2')), match);
+});
+
+test('unknown compression is an error', () => {
+  assert.throws(() => decodeMetadataFile(Buffer.from('<html>')), /unknown compression/);
+});
 
 test('match info', () => {
   assert.strictEqual(match.match_id, 115701682);
