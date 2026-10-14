@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     persona_name    TEXT,
     avatar_url      TEXT,
     last_synced_at  INTEGER,
+    last_full_sync_at INTEGER,
     last_error      TEXT
 );
 
@@ -91,6 +92,10 @@ def connect(path: str) -> sqlite3.Connection:
 
 def init(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # Columns added after the first release; CREATE TABLE IF NOT EXISTS won't add them to an existing db.
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(accounts)")}
+    if "last_full_sync_at" not in columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN last_full_sync_at INTEGER")
     conn.commit()
 
 

@@ -18,6 +18,10 @@ PAGE_SIZE = 1000
 BASELINE_PAGE_SIZE = 5000
 # Matches can be ingested out of match-id order, so every sync re-checks this window.
 SYNC_LOOKBACK_S = 2 * 86400
+# Old matches can still show up long after they were played (e.g. once a player runs
+# deadlock-api's ingest tool, which backfills their whole history), so once a day the sync
+# re-reads the account's full history instead of only the lookback window.
+FULL_RESYNC_S = 86400
 TEAMS = {"Team0": 0, "Team1": 1}
 
 
@@ -86,10 +90,16 @@ def _record(conn, job: str, started: int, error: str | None) -> None:
 
 
 def sync_account(conn: sqlite3.Connection, api: DeadlockApi, account_id: int, settings: Settings) -> int:
-    """Fetch the account's matches since its last sync (with lookback). Returns matches stored."""
-    row = conn.execute("SELECT last_synced_at FROM accounts WHERE account_id = ?", (account_id,)).fetchone()
-    since = row["last_synced_at"] - SYNC_LOOKBACK_S if row and row["last_synced_at"] else settings.backfill_since
+    """Fetch the account's matches since its last sync (with lookback), or its whole history
+    once a day. Returns matches stored."""
+    row = conn.execute(
+        "SELECT last_synced_at, last_full_sync_at FROM accounts WHERE account_id = ?", (account_id,)
+    ).fetchone()
     started = int(time.time())
+    full = not (row and row["last_synced_at"] and row["last_full_sync_at"]) or (
+        started - row["last_full_sync_at"] >= FULL_RESYNC_S
+    )
+    since = settings.backfill_since if full else row["last_synced_at"] - SYNC_LOOKBACK_S
     stored, min_match_id = 0, None
     while True:
         page = api.matches(
@@ -109,7 +119,10 @@ def sync_account(conn: sqlite3.Connection, api: DeadlockApi, account_id: int, se
         min_match_id = page[-1]["match_id"] + 1
     with transaction(conn):
         conn.execute(
-            "UPDATE accounts SET last_synced_at = ?, last_error = NULL WHERE account_id = ?", (started, account_id)
+            """UPDATE accounts SET last_synced_at = ?, last_error = NULL,
+                 last_full_sync_at = CASE WHEN ? THEN ? ELSE last_full_sync_at END
+               WHERE account_id = ?""",
+            (started, full, started, account_id),
         )
     return stored
 

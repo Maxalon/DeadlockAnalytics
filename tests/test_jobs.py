@@ -84,3 +84,30 @@ def test_parse_account_id():
         except ValueError:
             continue
         raise AssertionError(bad)
+
+
+def test_full_resync_once_a_day_picks_up_late_old_matches(conn, match_payload):
+    conn.execute("INSERT INTO accounts (account_id, added_at) VALUES (113956776, 0)")
+    api = FakeApi(pages=[[], [], match_payload])
+    jobs.sync_account(conn, api, 113956776, settings())  # first sync: full history
+    jobs.sync_account(conn, api, 113956776, settings())  # same day: only the lookback window
+    assert api.calls[0]["min_unix_timestamp"] == settings().backfill_since
+    assert api.calls[1]["min_unix_timestamp"] > settings().backfill_since
+    # A day later the full history is read again, so an old match ingested meanwhile is stored.
+    conn.execute("UPDATE accounts SET last_full_sync_at = last_full_sync_at - ?", (jobs.FULL_RESYNC_S,))
+    assert jobs.sync_account(conn, api, 113956776, settings()) == 1
+    assert api.calls[2]["min_unix_timestamp"] == settings().backfill_since
+    assert conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0] == 1
+
+
+def test_init_adds_new_columns_to_an_existing_db():
+    from app import db
+
+    c = db.connect(":memory:")
+    c.execute(
+        "CREATE TABLE accounts (account_id INTEGER PRIMARY KEY, added_at INTEGER NOT NULL, last_synced_at INTEGER)"
+    )
+    db.init(c)
+    db.init(c)  # idempotent
+    columns = {r["name"] for r in c.execute("PRAGMA table_info(accounts)")}
+    assert "last_full_sync_at" in columns
