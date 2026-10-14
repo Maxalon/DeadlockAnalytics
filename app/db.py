@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     last_synced_at  INTEGER,
     last_full_sync_at INTEGER,
     last_source     TEXT,                         -- where the last sync read matches from
+    pending_matches INTEGER,                      -- left to download after a Steam rate limit
     last_error      TEXT
 );
 
@@ -99,6 +100,8 @@ def init(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE accounts ADD COLUMN last_full_sync_at INTEGER")
     if "last_source" not in columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN last_source TEXT")
+    if "pending_matches" not in columns:
+        conn.execute("ALTER TABLE accounts ADD COLUMN pending_matches INTEGER")
     conn.commit()
 
 

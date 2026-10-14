@@ -20,7 +20,7 @@
     <tr>
       <td><a href="/players/{{ a.account_id }}">{{ a.persona_name or a.account_id }}</a> <span class="muted small">{{ a.account_id }}</span></td>
       <td class="num">{{ a.games }}</td>
-      <td>{{ a.last_synced_at|dt }}{% if a.last_source %} <span class="muted small">via {{ a.last_source }}</span>{% endif %}{% if a.last_error %}<br><span class="neg small">{{ a.last_error }}</span>{% endif %}</td>
+      <td>{{ a.last_synced_at|dt }}{% if a.last_source %} <span class="muted small">via {{ a.last_source }}</span>{% endif %}{% if a.pending_matches %}<br><span class="muted small">{{ a.pending_matches }} matches still to download</span>{% endif %}{% if a.last_error %}<br><span class="neg small">{{ a.last_error }}</span>{% endif %}</td>
       <td><form method="post" action="/accounts/{{ a.account_id }}/delete"><button class="link" type="submit">Stop tracking</button></form></td>
     </tr>
   {% else %}

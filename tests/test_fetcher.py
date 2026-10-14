@@ -50,13 +50,13 @@ def test_sync_through_bot_downloads_only_new_normal_matches(conn, fetcher_match)
     )
     api = FakeApi()
     assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 2
-    assert fetcher.fetched == [115700000, 115701682] and api.calls == []
+    assert fetcher.fetched == [115701682, 115700000] and api.calls == []  # newest first
     account = conn.execute("SELECT * FROM accounts").fetchone()
     assert account["last_source"] == "Steam bot" and account["last_error"] is None
 
     # already stored matches aren't downloaded again
     assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 0
-    assert fetcher.fetched == [115700000, 115701682]
+    assert fetcher.fetched == [115701682, 115700000]
 
 
 def test_unfinished_match_is_skipped_until_next_sync(conn, fetcher_match):
@@ -68,6 +68,38 @@ def test_unfinished_match_is_skipped_until_next_sync(conn, fetcher_match):
     )
     assert jobs.sync_account(conn, FakeApi(), ME, settings(), fetcher=fetcher) == 1
     assert conn.execute("SELECT last_error FROM accounts").fetchone()[0] is None
+
+
+def test_rate_limit_keeps_progress_and_the_next_sync_continues(conn, fetcher_match):
+    track(conn)
+    newer = {**fetcher_match, "match_id": 115800000}
+    limited = FetcherError("rate_limited", "Steam rate-limited match metadata requests")
+    fetcher = FakeFetcher(
+        history=[history_entry(115800000), history_entry(115701682), history_entry(115600000)],
+        matches={115800000: newer, 115701682: fetcher_match},
+        errors={115701682: limited},
+    )
+    api = FakeApi()
+    assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 1
+    account = conn.execute("SELECT * FROM accounts").fetchone()
+    assert account["pending_matches"] == 2 and account["last_error"] is None
+    assert account["last_source"] == "Steam bot" and api.calls == []  # no deadlock-api fallback
+
+    del fetcher.errors[115701682]
+    fetcher.matches[115600000] = {**fetcher_match, "match_id": 115600000}
+    assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 2
+    assert fetcher.fetched[-2:] == [115701682, 115600000]  # only the ones still missing
+    assert conn.execute("SELECT pending_matches FROM accounts").fetchone()[0] is None
+
+
+def test_rate_limit_on_history_waits_for_the_next_sync(conn):
+    track(conn)
+    fetcher = FakeFetcher()
+    fetcher.history = lambda account_id: (_ for _ in ()).throw(FetcherError("rate_limited", "slow down"))
+    api = FakeApi()
+    assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 0
+    assert api.calls == []
+    assert "next sync" in conn.execute("SELECT last_error FROM accounts").fetchone()[0]
 
 
 def test_falls_back_to_deadlock_api_and_says_why(conn, match_payload):
