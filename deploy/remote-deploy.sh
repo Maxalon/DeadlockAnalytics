@@ -1,5 +1,5 @@
 #!/bin/sh
-# Forced command for the `deploy` user's SSH key, set in authorized_keys as
+# Forced command for the `deadlock-deploy` user's SSH key, set in authorized_keys as
 #   restrict,command="/srv/deadlockanalytics/deploy/remote-deploy.sh" ssh-ed25519 AAAA...
 # Whatever command the SSH client sends is ignored. The only thing this key can do is
 # fast-forward the checkout to origin/main and recreate the container from the image CI

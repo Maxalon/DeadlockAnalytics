@@ -39,24 +39,25 @@ onto the box. Use either one or both; they don't conflict.
 ### First-time setup (both options)
 
 ```sh
-sudo useradd -m -s /bin/sh deploy && sudo usermod -aG docker deploy
-sudo install -d -o deploy -g deploy /srv/deadlockanalytics
-sudo -u deploy git clone https://github.com/Maxalon/DeadlockAnalytics /srv/deadlockanalytics
-sudo -u deploy cp /srv/deadlockanalytics/.env.example /srv/deadlockanalytics/.env   # set TRACKED_ACCOUNT_IDS
-cd /srv/deadlockanalytics && sudo -u deploy docker compose up -d
+# A dedicated user, so its SSH key can be locked down without affecting any other user.
+sudo useradd -m -s /bin/sh deadlock-deploy && sudo usermod -aG docker deadlock-deploy
+sudo install -d -o deadlock-deploy -g deadlock-deploy /srv/deadlockanalytics
+sudo -u deadlock-deploy git clone https://github.com/Maxalon/DeadlockAnalytics /srv/deadlockanalytics
+sudo -u deadlock-deploy cp /srv/deadlockanalytics/.env.example /srv/deadlockanalytics/.env   # set TRACKED_ACCOUNT_IDS
+cd /srv/deadlockanalytics && sudo -u deadlock-deploy docker compose up -d
 ```
 
-If the GHCR package is private, log in once as the user that pulls (`deploy`), with a GitHub
-token that only has `read:packages`: `sudo -u deploy docker login ghcr.io -u Maxalon`.
+If the GHCR package is private, log in once as the user that pulls (`deadlock-deploy`), with a GitHub
+token that only has `read:packages`: `sudo -u deadlock-deploy docker login ghcr.io -u Maxalon`.
 If the package is public, make it public once under the repo's *Packages* settings instead.
-The checkout is updated with `git fetch` as `deploy`. That works anonymously while the repo is
-public; if you make it private, add a read-only GitHub deploy key for the `deploy` user.
+The checkout is updated with `git fetch` as `deadlock-deploy`. That works anonymously while the repo is
+public; if you make it private, add a read-only GitHub deploy key for the `deadlock-deploy` user.
 
 ### Option A: push deploy from CI over Tailscale (about 1 min after merge)
 
 The `deploy` job in `.github/workflows/ci.yml` runs after the image is pushed. It:
 1. joins the tailnet as an ephemeral `tag:deadlock-deploy` node (`tailscale/github-action`);
-2. SSHes to the box as `deploy`.
+2. SSHes to the box as `deadlock-deploy`.
 
 That key's `authorized_keys` entry forces `deploy/remote-deploy.sh`, which only fast-forwards
 this checkout to `origin/main`, pulls the image, recreates the container and waits for the
@@ -92,11 +93,11 @@ policy changes only add a narrowly scoped tag for this job:
 
 **Box:**
 - Generate a key pair: `ssh-keygen -t ed25519 -f deadlock-deploy -N "" -C github-deploy`.
-- Add one line to `/home/deploy/.ssh/authorized_keys` (`.ssh` mode 700, file mode 600):
+- Add one line to `/home/deadlock-deploy/.ssh/authorized_keys` (`.ssh` mode 700, file mode 600):
   ```
   restrict,command="/srv/deadlockanalytics/deploy/remote-deploy.sh" ssh-ed25519 AAAA... github-deploy
   ```
-- If `sshd_config` uses `AllowUsers`, add `deploy`.
+- If `sshd_config` uses `AllowUsers`/`AllowGroups`, allow `deadlock-deploy`.
 - From another tailnet device, run `ssh-keyscan -t ed25519 100.x.y.z` and keep the output line.
 
 **GitHub** (*Settings → Environments → New environment* `production`; deployment branches: `main` only):
@@ -119,7 +120,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now deadlock-analytics-update.timer
 ```
 
-The service runs as `deploy`, so it uses the same checkout and GHCR login.
+The service runs as `deadlock-deploy`, so it uses the same checkout and GHCR login.
 
 ### Reverse proxy and backups
 

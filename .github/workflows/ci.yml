@@ -49,8 +49,8 @@ jobs:
 
   deploy:
     # Runs on GitHub's runners: joins the tailnet as an ephemeral tag:deadlock-deploy node
-    # (a dedicated tag whose only grant is SSH to the box), then SSHes in as `deploy`, whose
-    # key can only run deploy/remote-deploy.sh (forced command).
+    # (a dedicated tag whose only grant is SSH to the box), then SSHes in as `deadlock-deploy`,
+    # whose key can only run deploy/remote-deploy.sh (forced command).
     # Secrets live in the `production` environment, which only main may use.
     # Until they are configured this job skips itself instead of failing.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -95,4 +95,4 @@ jobs:
           chmod 600 ~/.ssh/deploy
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
-            -o ConnectTimeout=20 "deploy@${DEPLOY_HOST}"
+            -o ConnectTimeout=20 "deadlock-deploy@${DEPLOY_HOST}"
