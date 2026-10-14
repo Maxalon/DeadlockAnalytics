@@ -17,7 +17,7 @@ from . import charts, queries, scoring
 from .api import DeadlockApi
 from .config import Settings
 from .db import connect, init, transaction
-from .fetcher import Fetcher
+from .fetcher import Fetcher, FetcherError
 from .scheduler import Scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -91,9 +91,57 @@ def create_app(
             snapshot=queries.latest_snapshot(db()),
         )
 
+    def add_tracked(account_id: int) -> None:
+        with transaction(db()) as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO accounts (account_id, added_at) VALUES (?, ?)", (account_id, int(time.time()))
+            )
+        scheduler.request_account_sync(account_id)
+
     @app.get("/accounts", response_class=HTMLResponse)
-    def accounts_page(request: Request, error: str | None = None):
-        return render(request, "accounts.html", accounts=queries.accounts(db()), error=error)
+    def accounts_page(request: Request, error: str | None = None, bot_error: str | None = None):
+        bot = None
+        if fetcher is not None:
+            try:
+                bot = fetcher.friends()
+            except FetcherError as exc:
+                bot_error = bot_error or str(exc)
+        accounts = queries.accounts(db())
+        return render(
+            request,
+            "accounts.html",
+            accounts=accounts,
+            error=error,
+            bot_enabled=fetcher is not None,
+            bot=bot,
+            bot_error=bot_error,
+            tracked={a["account_id"] for a in accounts},
+        )
+
+    # The Steam bot's friend requests are handled here by hand; the bot never accepts one on
+    # its own, so nobody can make it befriend (and fetch) arbitrary accounts.
+    @app.post("/bot/friends/decline-all")
+    def bot_decline_all():
+        if fetcher is None:
+            raise HTTPException(404)
+        try:
+            fetcher.decline_all()
+        except FetcherError as exc:
+            return RedirectResponse(f"/accounts?bot_error={quote(str(exc))}#bot", status_code=303)
+        return RedirectResponse("/accounts#bot", status_code=303)
+
+    @app.post("/bot/friends/{account_id}/{action}")
+    def bot_friend_action(account_id: int, action: str):
+        track = action == "accept-track"
+        if fetcher is None or action not in {"accept", "accept-track", "decline", "remove", "block", "unblock"}:
+            raise HTTPException(404)
+        try:
+            fetcher.friend_action(account_id, "accept" if track else action)
+        except FetcherError as exc:
+            return RedirectResponse(f"/accounts?bot_error={quote(str(exc))}#bot", status_code=303)
+        if track:
+            add_tracked(account_id)
+        return RedirectResponse("/accounts#bot", status_code=303)
 
     @app.post("/accounts")
     def add_account(account: str = Form(...)):
@@ -101,11 +149,7 @@ def create_app(
             account_id = queries.parse_account_id(account)
         except ValueError as exc:
             return RedirectResponse(f"/accounts?error={quote(str(exc))}", status_code=303)
-        with transaction(db()) as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO accounts (account_id, added_at) VALUES (?, ?)", (account_id, int(time.time()))
-            )
-        scheduler.request_account_sync(account_id)
+        add_tracked(account_id)
         return RedirectResponse("/accounts", status_code=303)
 
     @app.post("/accounts/{account_id}/delete")
@@ -113,7 +157,6 @@ def create_app(
         # Stops tracking; already-stored matches stay (other tracked players may share them).
         with transaction(db()) as conn:
             conn.execute("DELETE FROM accounts WHERE account_id = ?", (account_id,))
-        scheduler.accounts_changed()
         return RedirectResponse("/accounts", status_code=303)
 
     @app.post("/sync")

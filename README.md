@@ -45,8 +45,8 @@ docker compose up -d
 reverse proxy. Adjust that to your setup. Data lives in the `deadlock_data` volume.
 
 The fetcher needs a Steam account with Deadlock access, logged in once with
-`docker compose run --rm -it fetcher npm run login`; tracked players then add it as a friend
-(it accepts requests only from accounts tracked at `/accounts`).
+`docker compose run --rm -it fetcher npm run login`. Players then send it a friend request, which
+you accept, decline or block at `/accounts`; the bot never accepts one on its own.
 Until then the site falls back to deadlock-api, and `/accounts` shows which source each sync used.
 
 To keep the container up to date, either enable the systemd timer in `deploy/`, or use the

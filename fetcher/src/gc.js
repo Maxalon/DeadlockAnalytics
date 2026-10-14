@@ -23,7 +23,8 @@ const HELLO = { client_session_need: 104, client_launcher: 0, engine: 1 };
 class GcError extends Error {
   constructor(code, message) {
     super(message || code);
-    this.code = code; // not_ready | timeout | private | rate_limited | invalid_match | in_flight | gc_error
+    // not_ready | timeout | private | rate_limited | invalid_match | in_flight | gc_error | bad_request | conflict
+    this.code = code;
   }
 }
 
@@ -33,14 +34,12 @@ class DeadlockGC extends EventEmitter {
    * @param {SteamUser} [opts.client] injectable for tests
    * @param {string} opts.refreshToken from `npm run login`
    * @param {(token: string) => void} opts.saveRefreshToken called when Steam renews the token
-   * @param {(accountId: number) => boolean} opts.allowedFriends whether to accept this SteamID3's friend request
    */
-  constructor({ client, refreshToken, saveRefreshToken, allowedFriends, log = console }) {
+  constructor({ client, refreshToken, saveRefreshToken, log = console }) {
     super();
     this.client = client || new SteamUser({ renewRefreshTokens: true, autoRelogin: true });
     this.refreshToken = refreshToken;
     this.saveRefreshToken = saveRefreshToken;
-    this.allowedFriends = allowedFriends;
     this.log = log;
     this.loggedIn = false;
     this.ready = false;
@@ -91,9 +90,6 @@ class DeadlockGC extends EventEmitter {
         this.emit('ready');
       }
     });
-    c.on('friendRelationship', (steamID, relationship) => this._maybeAccept(steamID, relationship));
-    // Requests that arrived while the bot was offline.
-    c.on('friendsList', () => this.acceptPendingRequests());
     c.on('disconnected', (eresult, msg) => {
       this.loggedIn = false;
       this._notReady();
@@ -108,22 +104,56 @@ class DeadlockGC extends EventEmitter {
     });
   }
 
-  /** Accept open friend requests that are allowed now, e.g. after a player was added to the site. */
-  acceptPendingRequests() {
+  /**
+   * The bot's friends list. Friend requests are never acted on automatically: they wait here
+   * until someone accepts, declines or blocks them on the website.
+   */
+  friends() {
+    const R = SteamUser.EFriendRelationship;
+    const groups = { incoming: [], friends: [], blocked: [] };
+    const group = { [R.RequestRecipient]: 'incoming', [R.Friend]: 'friends', [R.Blocked]: 'blocked', [R.IgnoredFriend]: 'blocked' };
     for (const [id64, relationship] of Object.entries(this.client.myFriends || {})) {
-      this._maybeAccept(new SteamID(id64), relationship);
+      if (!(relationship in group)) continue;
+      const persona = (this.client.users || {})[id64];
+      groups[group[relationship]].push({ account_id: new SteamID(id64).accountid, name: (persona && persona.player_name) || null });
     }
+    for (const list of Object.values(groups)) list.sort((a, b) => a.account_id - b.account_id);
+    return { logged_in: this.loggedIn, ...groups };
   }
 
-  _maybeAccept(steamID, relationship) {
-    if (relationship !== SteamUser.EFriendRelationship.RequestRecipient) return;
-    const accountId = steamID.accountid;
-    if (this.allowedFriends(accountId)) {
-      this.log.info(`steam: accepting friend request from ${accountId}`);
-      this.client.addFriend(steamID);
-    } else {
-      this.log.info(`steam: ignoring friend request from ${accountId} (not a tracked account)`);
+  /**
+   * accept / decline an incoming request, remove a friend, block or unblock. Each only applies
+   * to an account in the matching state: in particular `accept` never sends a new invite.
+   */
+  async friendAction(accountId, action) {
+    if (!this.loggedIn) throw new GcError('not_ready', 'the bot is not logged in to Steam');
+    if (!Number.isInteger(accountId) || accountId < 1 || accountId > 2 ** 32 - 1) {
+      throw new GcError('bad_request', `not a SteamID3: ${accountId}`);
     }
+    const R = SteamUser.EFriendRelationship;
+    const steamID = SteamID.fromIndividualAccountID(accountId);
+    const relationship = (this.client.myFriends || {})[steamID.getSteamID64()];
+    const allowed = {
+      accept: [R.RequestRecipient],
+      decline: [R.RequestRecipient],
+      remove: [R.Friend],
+      block: [R.RequestRecipient, R.Friend, R.None, undefined],
+      unblock: [R.Blocked, R.IgnoredFriend],
+    }[action];
+    if (!allowed) throw new GcError('bad_request', `unknown action ${action}`);
+    if (!allowed.includes(relationship)) throw new GcError('conflict', `can't ${action} ${accountId} in its current state`);
+    if (action === 'accept') await this.client.addFriend(steamID);
+    else if (action === 'decline' || action === 'remove') this.client.removeFriend(steamID);
+    else if (action === 'block') await this.client.blockUser(steamID);
+    else await this.client.unblockUser(steamID);
+    this.log.info(`steam: ${action} ${accountId}`);
+  }
+
+  /** Decline every open friend request at once. */
+  declineAll() {
+    const incoming = this.friends().incoming;
+    for (const { account_id: accountId } of incoming) this.client.removeFriend(SteamID.fromIndividualAccountID(accountId));
+    return incoming.length;
   }
 
   _startHello() {

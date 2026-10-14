@@ -42,6 +42,13 @@ class Fetcher:
     def match(self, match_id: int) -> dict:
         return self._request("GET", f"/matches/{match_id}")
 
-    def set_friends(self, account_ids: list[int]) -> None:
-        """The tracked accounts: the bot accepts friend requests only from these."""
-        self._request("PUT", "/friends", json={"account_ids": account_ids})
+    def friends(self) -> dict:
+        """The bot's open friend requests, friends and blocked accounts. Short timeout: a page waits on it."""
+        return self._request("GET", "/friends", timeout=5)
+
+    def friend_action(self, account_id: int, action: str) -> None:
+        """accept / decline / remove / block / unblock. Requests are never accepted automatically."""
+        self._request("POST", f"/friends/{account_id}/{action}", timeout=15)
+
+    def decline_all(self) -> int:
+        return self._request("POST", "/friends/decline-all", timeout=15)["declined"]

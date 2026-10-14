@@ -9,7 +9,7 @@ from . import jobs
 from .api import DeadlockApi
 from .config import Settings
 from .db import connect
-from .fetcher import Fetcher, FetcherError
+from .fetcher import Fetcher
 
 log = logging.getLogger(__name__)
 TICK_S = 30
@@ -20,7 +20,6 @@ class Scheduler:
         self.settings = settings
         self.api = api
         self.fetcher = fetcher
-        self._friends_sent: list[int] | None = None  # tracked accounts the fetcher last confirmed
         self.sync_requested = threading.Event()  # "sync every account now"
         self._wake = threading.Event()  # cut the idle wait short
         self._stop = threading.Event()
@@ -46,23 +45,6 @@ class Scheduler:
         with self._lock:
             self._pending.add(account_id)
         self._wake.set()
-
-    def accounts_changed(self) -> None:
-        self._wake.set()
-
-    def _push_friends(self, conn) -> None:
-        """Keep the fetcher's friend list (whose requests the bot accepts) equal to the tracked
-        accounts. Sent when it changes; a failed send is retried on the next tick."""
-        if self.fetcher is None:
-            return
-        ids = [r[0] for r in conn.execute("SELECT account_id FROM accounts ORDER BY account_id")]
-        if ids == self._friends_sent:
-            return
-        try:
-            self.fetcher.set_friends(ids)
-            self._friends_sent = ids
-        except FetcherError as exc:
-            log.warning("could not send the tracked accounts to the fetcher: %s", exc)
 
     def is_syncing(self, account_id: int) -> bool:
         with self._lock:
@@ -95,7 +77,6 @@ class Scheduler:
         conn = connect(self.settings.database_path)
         while not self._stop.is_set():
             try:
-                self._push_friends(conn)
                 self._sync_pending_accounts(conn)
                 if self._due(conn, "heroes", 86400):
                     jobs.refresh_heroes(conn, self.api)

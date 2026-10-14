@@ -29,4 +29,69 @@
   </tbody>
 </table>
 </div>
+{% if bot_enabled %}
+<h2 id="bot">Steam bot friends</h2>
+<p class="muted small">Players add the bot as a Steam friend so it can read their match history. Requests wait here until you handle them; the bot never accepts one on its own.</p>
+{% if bot_error %}<p class="neg small">{{ bot_error }}</p>{% endif %}
+{% if bot %}
+<h3>Friend requests</h3>
+{% if bot.incoming %}
+<form method="post" action="/bot/friends/decline-all"><button class="link" type="submit">Decline all {{ bot.incoming|length }}</button></form>
+{% endif %}
+<div class="scroll">
+<table>
+  <tbody>
+  {% for f in bot.incoming %}
+    <tr>
+      <td><a href="https://steamcommunity.com/profiles/[U:1:{{ f.account_id }}]" rel="noreferrer">{{ f.name or f.account_id }}</a> <span class="muted small">{{ f.account_id }}</span></td>
+      <td class="actions">
+        {% if f.account_id not in tracked %}<form method="post" action="/bot/friends/{{ f.account_id }}/accept-track"><button type="submit">Accept &amp; track</button></form>{% endif %}
+        <form method="post" action="/bot/friends/{{ f.account_id }}/accept"><button type="submit">Accept</button></form>
+        <form method="post" action="/bot/friends/{{ f.account_id }}/decline"><button class="link" type="submit">Decline</button></form>
+        <form method="post" action="/bot/friends/{{ f.account_id }}/block"><button class="link" type="submit">Block</button></form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td class="muted">No open requests.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h3>Friends</h3>
+<div class="scroll">
+<table>
+  <tbody>
+  {% for f in bot.friends %}
+    <tr>
+      <td><a href="https://steamcommunity.com/profiles/[U:1:{{ f.account_id }}]" rel="noreferrer">{{ f.name or f.account_id }}</a> <span class="muted small">{{ f.account_id }}{% if f.account_id in tracked %} · tracked{% endif %}</span></td>
+      <td class="actions">
+        <form method="post" action="/bot/friends/{{ f.account_id }}/remove"><button class="link" type="submit">Remove</button></form>
+        <form method="post" action="/bot/friends/{{ f.account_id }}/block"><button class="link" type="submit">Block</button></form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td class="muted">None yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if bot.blocked %}
+<h3>Blocked</h3>
+<div class="scroll">
+<table>
+  <tbody>
+  {% for f in bot.blocked %}
+    <tr>
+      <td>{{ f.name or f.account_id }} <span class="muted small">{{ f.account_id }}</span></td>
+      <td class="actions"><form method="post" action="/bot/friends/{{ f.account_id }}/unblock"><button class="link" type="submit">Unblock</button></form></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endif %}
+{% endif %}
 {% endblock %}
