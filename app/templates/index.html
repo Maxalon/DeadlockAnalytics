@@ -20,7 +20,7 @@
       </div>
     </div>
     <dl>
-      <div><dt>Matches</dt><dd>{{ a.games }}</dd></div>
+      <div><dt>Matches</dt><dd>{{ a.games }}{% if a.not_scored %} <span class="muted small">+{{ a.not_scored }} not scored</span>{% endif %}</dd></div>
       <div><dt>Win rate</dt><dd>{{ "%.0f%%"|format(100 * a.wins / a.games) if a.games else "—" }}</dd></div>
       <div><dt>MVP</dt><dd>{{ a.mvps or 0 }}</dd></div>
       <div><dt>Key Player</dt><dd>{{ a.key_players or 0 }}</dd></div>

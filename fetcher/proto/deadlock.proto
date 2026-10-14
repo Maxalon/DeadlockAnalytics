@@ -34,6 +34,8 @@ message CMsgClientToGCGetMatchHistoryResponse {
     optional uint32 net_worth = 14;
     optional uint32 match_mode = 19;
     optional uint32 game_mode = 20;
+    // EPlayerMatchOutcome: 1 win, 2 loss, 3 penalized (left), 4 penalized party, 5 not scored
+    optional uint32 player_match_outcome = 26;
   }
   optional uint32 result = 1;  // 1 success, 2 invalid permission (not a friend / private), 5 rate limited
   optional uint64 continue_cursor = 2;
@@ -43,6 +45,8 @@ message CMsgClientToGCGetMatchHistoryResponse {
 // k_EMsgClientToGCGetMatchMetaData = 9167, response 9168
 message CMsgClientToGCGetMatchMetaData {
   optional uint64 match_id = 1;
+  // Whose match history the match was opened from; the game client sends it.
+  optional uint32 target_account_id = 4;
 }
 
 message CMsgClientToGCGetMatchMetaDataResponse {
@@ -92,6 +96,7 @@ message CMsgMatchMetaDataContents {
     optional uint32 match_mode = 10;
     optional uint32 average_badge_team0 = 23;
     optional uint32 average_badge_team1 = 24;
+    optional bool not_scored = 27;  // e.g. someone left early: played out, but doesn't count
   }
   optional MatchInfo match_info = 2;
 }

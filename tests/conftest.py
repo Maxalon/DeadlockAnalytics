@@ -98,7 +98,7 @@ class FakeFetcher:
     def history(self, account_id):
         return self._history
 
-    def match(self, match_id):
+    def match(self, match_id, account_id=None):
         self.fetched.append(match_id)
         if match_id in self.errors:
             raise self.errors[match_id]

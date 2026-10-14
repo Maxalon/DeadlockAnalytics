@@ -47,6 +47,7 @@ function decodeMetadataFile(file) {
     match_mode: MATCH_MODES[info.match_mode] ?? String(info.match_mode),
     game_mode: GAME_MODES[info.game_mode] ?? String(info.game_mode),
     average_badge: averageBadge(info.average_badge_team0, info.average_badge_team1),
+    not_scored: info.not_scored,
     players: info.players.map((p) => ({
       account_id: p.account_id,
       player_slot: p.player_slot,

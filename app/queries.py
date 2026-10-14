@@ -74,8 +74,9 @@ def heroes(conn: sqlite3.Connection) -> dict[int, sqlite3.Row]:
 
 def accounts(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
-        """SELECT a.*, COUNT(mp.match_id) AS games,
-                  SUM(mp.team = m.winning_team) AS wins,
+        """SELECT a.*, COUNT(mp.match_id) - SUM(IFNULL(m.not_scored, 0)) AS games,
+                  SUM(mp.team = m.winning_team AND NOT IFNULL(m.not_scored, 0)) AS wins,
+                  SUM(IFNULL(m.not_scored, 0)) AS not_scored,
                   SUM(IFNULL(mp.mvp_rank, 0) = 1) AS mvps,
                   SUM(IFNULL(mp.mvp_rank, 0) IN (2, 3)) AS key_players,
                   MAX(m.start_time) AS last_match
@@ -147,7 +148,8 @@ def hero_summary(conn: sqlite3.Connection, account_id: int) -> list[dict]:
                   AVG(mp.kills) AS kills, AVG(mp.deaths) AS deaths, AVG(mp.assists) AS assists,
                   AVG(mp.net_worth) AS net_worth, AVG(mp.player_damage) AS player_damage
            FROM match_players mp JOIN matches m ON m.match_id = mp.match_id
-           WHERE mp.account_id = ? GROUP BY mp.hero_id ORDER BY games DESC""",
+           WHERE mp.account_id = ? AND NOT IFNULL(m.not_scored, 0)  -- like in game
+           GROUP BY mp.hero_id ORDER BY games DESC""",
         (account_id,),
     ).fetchall()
     return [dict(r) for r in rows]

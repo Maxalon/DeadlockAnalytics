@@ -193,6 +193,7 @@ def create_app(
             heroes_played=queries.hero_summary(db(), account_id),
             chart=charts.score_trend(trend),
             syncing=account is not None and scheduler.is_syncing(account_id),
+            next_sync=(account["last_synced_at"] or 0) + settings.sync_interval_s if account else None,
         )
 
     @app.get("/matches/{match_id}", response_class=HTMLResponse)

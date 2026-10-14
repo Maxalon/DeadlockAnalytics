@@ -11,7 +11,7 @@ const config = require('../src/config');
 const fixture = fs.readFileSync(path.join(__dirname, 'fixtures', '115701682.meta.bz2'));
 
 function service({ salts, download }) {
-  const calls = { salts: 0, urls: [] };
+  const calls = { salts: 0, urls: [], targets: [] };
   const gc = {
     actions: [],
     friends: () => ({ logged_in: true, incoming: [], friends: [], blocked: [] }),
@@ -21,7 +21,7 @@ function service({ salts, download }) {
     },
     declineAll: () => 3,
     status: () => ({ gc_ready: true }),
-    matchSalts: async (id) => { calls.salts += 1; return salts(id); },
+    matchSalts: async (id, target) => { calls.salts += 1; calls.targets.push(target); return salts(id); },
     fullHistory: async () => ({ matches: [{ match_id: '115701682', hero_id: 3 }], complete: true }),
   };
   const fetchFn = async (url) => { calls.urls.push(url); return download(url); };
@@ -70,4 +70,16 @@ test('friends routes', async () => {
   assert.strictEqual((await svc.handle('/friends/42/accept')).status, 404); // GET
   assert.strictEqual((await svc.handle('/history/1', 'POST')).status, 404);
   assert.strictEqual((await svc.handle('/friends', 'DELETE')).status, 405);
+});
+
+test('the account is passed on, and /salts asks the GC every time', async () => {
+  const { svc, calls } = service({
+    salts: () => ({ cluster_id: 3, metadata_salt: 1234 }),
+    download: () => new Response(fixture),
+  });
+  const q = new URLSearchParams('account=113956776');
+  assert.strictEqual((await svc.handle('/matches/115701682', 'GET', q)).status, 200);
+  assert.strictEqual((await svc.handle('/salts/115701682', 'GET', q)).status, 200);
+  assert.strictEqual((await svc.handle('/salts/115701682')).status, 200);
+  assert.deepStrictEqual(calls.targets, [113956776, 113956776, null]);
 });

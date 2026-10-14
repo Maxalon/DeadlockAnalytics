@@ -12,7 +12,7 @@
   <div class="sync">
     <span class="muted small">
       {% if syncing %}Pulling matches…{% else %}Matches pulled {{ account.last_full_sync_at|dt }}{% endif %}
-      {% if account.pending_matches and not syncing %} · <span class="muted">{{ account.pending_matches }} older matches still to download (Steam rate limit; continues with the next sync)</span>{% endif %}
+      {% if account.pending_matches and not syncing %} · <span class="muted" title="Games and win rate already count these matches. Steam limits how fast the bot may download match files, so damage, healing, MVP ranks and scores for them follow over the next syncs.">details for {{ account.pending_matches }} matches still to come, next try around {{ next_sync|dt }}</span>{% endif %}
       {% if account.last_error and not syncing %} · <span class="neg">last pull failed: {{ account.last_error }}</span>{% endif %}
     </span>
     <form method="post" action="/players/{{ account_id }}/sync"><button type="submit"{% if syncing %} disabled{% endif %}>Re-pull matches</button></form>
@@ -61,7 +61,7 @@
       <tr>
         <td><a href="/matches/{{ m.match_id }}">{{ m.start_time|dt }}</a> <span class="muted small">{{ m.match_mode }} · {{ m.duration_s|mins }}</span></td>
         <td>{{ hero(heroes, m.hero_id) }}</td>
-        <td class="{{ 'pos' if m.won else 'neg' }}">{{ "Win" if m.won else "Loss" }}</td>
+        <td class="{{ 'pos' if m.won else 'neg' }}">{{ "Win" if m.won else "Loss" }}{% if m.not_scored %}<br><span class="muted small" title="Played out but doesn't count (e.g. someone left early); not in games or win rate">not scored</span>{% endif %}</td>
         <td class="num">{{ m.kills }} / {{ m.deaths }} / {{ m.assists }}</td>
         <td class="num">{{ m.net_worth|num }}</td>
         <td class="num">{{ score(m.score) }}</td>

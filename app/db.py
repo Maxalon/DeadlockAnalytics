@@ -5,7 +5,29 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA = """
+MATCH_PLAYERS = """
+CREATE TABLE IF NOT EXISTS match_players (
+    match_id         INTEGER NOT NULL REFERENCES matches(match_id) ON DELETE CASCADE,
+    player_slot      INTEGER NOT NULL,            -- -account_id until the match file is downloaded
+    account_id       INTEGER NOT NULL,
+    team             INTEGER NOT NULL,
+    hero_id          INTEGER NOT NULL,
+    kills            INTEGER NOT NULL,
+    deaths           INTEGER NOT NULL,
+    assists          INTEGER NOT NULL,
+    net_worth        INTEGER NOT NULL,
+    -- NULL until the match file is downloaded (not in the match history)
+    player_damage    INTEGER,
+    objective_damage INTEGER,                     -- boss_damage in Valve's metadata
+    ally_healing     INTEGER,                     -- teammate_healing
+    mvp_rank         INTEGER,                     -- Valve's: 1 = MVP, 2-3 = Key Player
+    abandon_time_s   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (match_id, player_slot)
+);
+"""
+
+SCHEMA = (
+    """
 CREATE TABLE IF NOT EXISTS accounts (
     account_id      INTEGER PRIMARY KEY,          -- SteamID3
     added_at        INTEGER NOT NULL,
@@ -26,26 +48,17 @@ CREATE TABLE IF NOT EXISTS matches (
     game_mode       TEXT NOT NULL,
     winning_team    INTEGER NOT NULL,             -- 0 or 1
     average_badge   INTEGER,
-    fetched_at      INTEGER NOT NULL
+    fetched_at      INTEGER NOT NULL,
+    -- 1: Valve's match file (all 12 players, every stat). 0: only the tracked player's line
+    -- from their match history, until the match file can be downloaded.
+    detailed        INTEGER NOT NULL DEFAULT 1,
+    -- 1: played out but doesn't count (e.g. someone left early); excluded from games and win
+    -- rate like in game. NULL: unknown (stored before this was recorded).
+    not_scored      INTEGER
 );
-
-CREATE TABLE IF NOT EXISTS match_players (
-    match_id         INTEGER NOT NULL REFERENCES matches(match_id) ON DELETE CASCADE,
-    player_slot      INTEGER NOT NULL,
-    account_id       INTEGER NOT NULL,
-    team             INTEGER NOT NULL,
-    hero_id          INTEGER NOT NULL,
-    kills            INTEGER NOT NULL,
-    deaths           INTEGER NOT NULL,
-    assists          INTEGER NOT NULL,
-    net_worth        INTEGER NOT NULL,
-    player_damage    INTEGER NOT NULL,
-    objective_damage INTEGER NOT NULL,            -- boss_damage in Valve's metadata
-    ally_healing     INTEGER NOT NULL,            -- teammate_healing
-    mvp_rank         INTEGER,                     -- Valve's: 1 = MVP, 2-3 = Key Player
-    abandon_time_s   INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (match_id, player_slot)
-);
+"""
+    + MATCH_PLAYERS
+    + """
 CREATE INDEX IF NOT EXISTS match_players_account ON match_players(account_id, match_id);
 
 CREATE TABLE IF NOT EXISTS baseline_snapshots (
@@ -79,6 +92,7 @@ CREATE TABLE IF NOT EXISTS job_runs (
     last_error      TEXT
 );
 """
+)
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -102,6 +116,22 @@ def init(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE accounts ADD COLUMN last_source TEXT")
     if "pending_matches" not in columns:
         conn.execute("ALTER TABLE accounts ADD COLUMN pending_matches INTEGER")
+    match_columns = {r["name"] for r in conn.execute("PRAGMA table_info(matches)")}
+    if "detailed" not in match_columns:
+        conn.execute("ALTER TABLE matches ADD COLUMN detailed INTEGER NOT NULL DEFAULT 1")
+    if "not_scored" not in match_columns:
+        conn.execute("ALTER TABLE matches ADD COLUMN not_scored INTEGER")
+    if any(r["name"] == "player_damage" and r["notnull"] for r in conn.execute("PRAGMA table_info(match_players)")):
+        # SQLite can't drop NOT NULL in place: rebuild the table with the nullable columns.
+        conn.executescript(
+            "BEGIN;"
+            "ALTER TABLE match_players RENAME TO match_players_old;"
+            + MATCH_PLAYERS
+            + "INSERT INTO match_players SELECT * FROM match_players_old;"
+            "DROP TABLE match_players_old;"
+            "CREATE INDEX IF NOT EXISTS match_players_account ON match_players(account_id, match_id);"
+            "COMMIT;"
+        )
     conn.commit()
 
 
