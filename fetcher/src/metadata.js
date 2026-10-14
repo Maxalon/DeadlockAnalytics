@@ -1,6 +1,7 @@
 'use strict';
 // Decodes Valve's <match_id>_<salt>.meta.bz2 files into the same JSON shape the site already
 // reads from deadlock-api's /v1/matches/metadata endpoint, so it can store either unchanged.
+const zlib = require('node:zlib');
 const bzip2 = require('seek-bzip');
 const proto = require('./proto');
 
@@ -25,8 +26,15 @@ function maxOf(stats, field) {
   return stats.reduce((m, s) => Math.max(m, s[field] || 0), 0);
 }
 
-function decodeMetadataFile(bz2Buffer) {
-  const raw = Buffer.from(bzip2.decode(bz2Buffer));
+// Despite the .bz2 name, Valve serves these files zstd-compressed; older ones were bzip2.
+function decompress(file) {
+  if (file.subarray(0, 4).equals(Buffer.from([0x28, 0xb5, 0x2f, 0xfd]))) return zlib.zstdDecompressSync(file);
+  if (file.subarray(0, 3).toString('latin1') === 'BZh') return Buffer.from(bzip2.decode(file));
+  throw new Error(`unknown compression (first bytes ${file.subarray(0, 4).toString('hex')})`);
+}
+
+function decodeMetadataFile(file) {
+  const raw = decompress(file);
   const meta = proto.MatchMetaData.decode(raw);
   const contents = proto.toObject(proto.MatchMetaDataContents, proto.MatchMetaDataContents.decode(meta.match_details));
   const info = contents.match_info;

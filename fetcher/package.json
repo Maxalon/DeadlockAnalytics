@@ -4,7 +4,7 @@
   "description": "Fetches tracked players' Deadlock match history and match data through a Steam bot account",
   "type": "commonjs",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.15"
   },
   "scripts": {
     "start": "node src/server.js",
