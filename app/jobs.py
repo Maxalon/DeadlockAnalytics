@@ -89,15 +89,19 @@ def _record(conn, job: str, started: int, error: str | None) -> None:
         )
 
 
-def sync_account(conn: sqlite3.Connection, api: DeadlockApi, account_id: int, settings: Settings) -> int:
+def sync_account(
+    conn: sqlite3.Connection, api: DeadlockApi, account_id: int, settings: Settings, full: bool = False
+) -> int:
     """Fetch the account's matches since its last sync (with lookback), or its whole history
     once a day. Returns matches stored."""
     row = conn.execute(
         "SELECT last_synced_at, last_full_sync_at FROM accounts WHERE account_id = ?", (account_id,)
     ).fetchone()
     started = int(time.time())
-    full = not (row and row["last_synced_at"] and row["last_full_sync_at"]) or (
-        started - row["last_full_sync_at"] >= FULL_RESYNC_S
+    full = (
+        full
+        or not (row and row["last_synced_at"] and row["last_full_sync_at"])
+        or (started - row["last_full_sync_at"] >= FULL_RESYNC_S)
     )
     since = settings.backfill_since if full else row["last_synced_at"] - SYNC_LOOKBACK_S
     stored, min_match_id = 0, None
@@ -127,18 +131,27 @@ def sync_account(conn: sqlite3.Connection, api: DeadlockApi, account_id: int, se
     return stored
 
 
+def sync_account_safely(
+    conn: sqlite3.Connection, api: DeadlockApi, account_id: int, settings: Settings, full: bool = False
+) -> str | None:
+    """sync_account, but a failure is logged and stored on the account instead of raised."""
+    try:
+        n = sync_account(conn, api, account_id, settings, full=full)
+        log.info("synced account %s%s: %s matches", account_id, " (full)" if full else "", n)
+        return None
+    except Exception as exc:
+        log.exception("sync failed for %s", account_id)
+        with transaction(conn):
+            conn.execute("UPDATE accounts SET last_error = ? WHERE account_id = ?", (str(exc)[:500], account_id))
+        return f"{account_id}: {exc}"
+
+
 def sync_all_accounts(conn: sqlite3.Connection, api: DeadlockApi, settings: Settings) -> None:
     started = int(time.time())
     errors = []
     for (account_id,) in conn.execute("SELECT account_id FROM accounts ORDER BY account_id").fetchall():
-        try:
-            n = sync_account(conn, api, account_id, settings)
-            log.info("synced account %s: %s matches", account_id, n)
-        except Exception as exc:  # keep going with the other accounts
-            log.exception("sync failed for %s", account_id)
-            errors.append(f"{account_id}: {exc}")
-            with transaction(conn):
-                conn.execute("UPDATE accounts SET last_error = ? WHERE account_id = ?", (str(exc)[:500], account_id))
+        if error := sync_account_safely(conn, api, account_id, settings):  # keep going with the others
+            errors.append(error)
     try:
         refresh_profiles(conn, api)
     except Exception as exc:

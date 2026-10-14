@@ -70,3 +70,40 @@ def test_dark_is_default_and_light_is_remembered(tmp_path):
     assert 'data-theme="light"' in c.get("/").text
     assert c.get("/theme?to=dark&next=//evil.example", follow_redirects=False).headers["location"] == "/"
     assert 'data-theme="dark"' in c.get("/").text
+
+
+def test_viewing_a_player_queues_a_repull_with_cooldown(tmp_path, match_payload, research_baselines):
+    c, s = client(tmp_path)
+    seed(s, match_payload, research_baselines)
+    sched = c.app.state.scheduler
+    page = c.get("/players/113956776").text
+    assert sched.is_syncing(113956776)
+    assert 'http-equiv="refresh"' in page and "Pulling matches" in page
+    # Once pulled, views within the cooldown don't queue again (no refresh loop).
+    from app import db
+
+    conn = db.connect(s.database_path)
+    sched._sync_pending_accounts(conn)
+    conn.close()
+    assert not sched.is_syncing(113956776)
+    page = c.get("/players/113956776").text
+    assert not sched.is_syncing(113956776)
+    assert 'http-equiv="refresh"' not in page and "Re-pull matches" in page
+
+
+def test_repull_button_queues_only_tracked_accounts(tmp_path, match_payload, research_baselines):
+    c, s = client(tmp_path)
+    seed(s, match_payload, research_baselines)
+    sched = c.app.state.scheduler
+    r = c.post("/players/113956776/sync", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/players/113956776"
+    assert sched.is_syncing(113956776)
+    c.post("/players/894295721/sync")  # in a stored match, but not tracked
+    assert not sched.is_syncing(894295721)
+
+
+def test_adding_an_account_queues_only_that_account(tmp_path):
+    c, _ = client(tmp_path)
+    c.post("/accounts", data={"account": "42"})
+    assert c.app.state.scheduler.is_syncing(42)
+    assert not c.app.state.scheduler.sync_requested.is_set()
