@@ -168,7 +168,7 @@ def create_app(
     def resync_player(account_id: int):
         if db().execute("SELECT 1 FROM accounts WHERE account_id = ?", (account_id,)).fetchone():
             scheduler.request_account_sync(account_id)
-        return RedirectResponse(f"/players/{account_id}", status_code=303)
+        return RedirectResponse(app.url_path_for("player", account_id=account_id), status_code=303)
 
     @app.get("/players/{account_id}", response_class=HTMLResponse)
     def player(request: Request, account_id: int, page: int = 1):
@@ -212,9 +212,11 @@ def create_app(
 
     @app.get("/theme")
     def set_theme(to: str = "dark", next: str = "/"):
-        # Only same-site paths, so this can't be used as an open redirect.
-        target = next if next.startswith("/") and not next.startswith("//") else "/"
-        resp = RedirectResponse(target, status_code=303)
+        # Only same-site paths, so this can't be used as an open redirect. Browsers read "\\" as "/",
+        # so "/\\evil.example" counts as off-site too; the rebuilt "/" + path can never carry a host.
+        parts = urlsplit(next.replace("\\", "/"))
+        same_site = not parts.scheme and not parts.netloc and next.startswith("/")
+        resp = RedirectResponse("/" + next.lstrip("/") if same_site else "/", status_code=303)
         resp.set_cookie("theme", "light" if to == "light" else "dark", max_age=365 * 86400, samesite="lax")
         return resp
 
