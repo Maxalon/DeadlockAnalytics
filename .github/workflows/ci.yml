@@ -21,10 +21,25 @@ jobs:
       - run: ruff format --check app tests
       - run: pytest -q
 
+  test-fetcher:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fetcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: fetcher/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
   image:
     # Only main publishes. Pull requests (including from forks) never get registry credentials.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test
+    needs: [test, test-fetcher]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,6 +61,15 @@ jobs:
             ghcr.io/maxalon/deadlockanalytics:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: docker/build-push-action@v6
+        with:
+          context: fetcher
+          push: true
+          tags: |
+            ghcr.io/maxalon/deadlockanalytics-fetcher:latest
+            ghcr.io/maxalon/deadlockanalytics-fetcher:${{ github.sha }}
+          cache-from: type=gha,scope=fetcher
+          cache-to: type=gha,mode=max,scope=fetcher
 
   deploy:
     # Runs on GitHub's runners: joins the tailnet as an ephemeral tag:deadlock-deploy node

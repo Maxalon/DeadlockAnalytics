@@ -17,9 +17,24 @@ services:
       - deadlock_data:/data
     networks:
       - edge
+      - default
+
+  # Fetches tracked players' match history and match files through your own Steam bot
+  # account. Only on the project's internal network: reachable by `web`, nothing else.
+  # One-time login: docker compose run --rm -it fetcher npm run login
+  fetcher:
+    image: ghcr.io/maxalon/deadlockanalytics-fetcher:latest
+    container_name: deadlock-fetcher
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - fetcher_data:/data
+    networks:
+      - default
 
 volumes:
   deadlock_data:
+  fetcher_data:
 
 networks:
   edge:
