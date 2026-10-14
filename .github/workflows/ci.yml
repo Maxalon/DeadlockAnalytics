@@ -91,10 +91,10 @@ jobs:
         id: cfg
         env:
           TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           if [ -z "$TS_OAUTH_CLIENT_ID" ] || [ -z "$DEPLOY_HOST" ]; then
-            echo "::notice::Deploy secrets/variables not set in the production environment; skipping (see README)."
+            echo "::notice::Deploy secrets not set in the production environment; skipping."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -106,13 +106,13 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:deadlock-deploy
-          ping: ${{ vars.DEPLOY_HOST }}
+          ping: ${{ secrets.DEPLOY_HOST }}
       - name: Deploy over SSH
         if: steps.cfg.outputs.enabled == 'true'
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
