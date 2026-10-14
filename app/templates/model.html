@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import hero %}
+{% block title %}MVP model · Deadlock Analytics{% endblock %}
+{% block content %}
+<h1>How the MVP score works</h1>
+<p>Valve ranks players by a weighted sum of <em>hero-relative z-scores</em>: for each stat, how far your match total is from the average for your hero, in standard deviations. Values are raw match totals, not per minute.</p>
+<ul>
+  <li><strong>MVP</strong> is the highest score on the <strong>winning</strong> team.</li>
+  <li><strong>Key Players</strong> (ranks 2–3) are the next two scores from either team; at least one player from the losing team always makes the top 3.</li>
+</ul>
+<table class="narrow">
+  <thead><tr><th>Stat</th><th class="num">Weight</th></tr></thead>
+  <tbody>{% for name, (cols, w) in stats.items() %}<tr><td>{{ labels[name] }}</td><td class="num">{{ "%+.1f"|format(w) }}</td></tr>{% endfor %}</tbody>
+</table>
+<p class="muted small">Weights were fitted on 26,313 matches from October 2026 and predict Valve's MVP 95.5% of the time; Valve's exact constants and baselines are not public. Self-healing does not count; only healing on allies does, added to player damage. Full analysis: <code>research/mvp-115701682/REPORT.md</code> in the repo.</p>
+
+<h2>Current hero baselines</h2>
+{% if snapshot %}
+<p class="muted small">{{ snapshot.n_matches|num }} ranked + unranked Normal matches, {{ snapshot.window_start|dt }} → {{ snapshot.window_end|dt }}. Mean ± SD.</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Hero</th><th class="num">Samples</th>{% for name in stats %}<th class="num">{{ labels[name] }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in table|sort(attribute="n", reverse=true) %}
+    <tr><td>{{ hero(heroes, row.hero_id) }}</td><td class="num">{{ row.n|num }}</td>
+    {% for name in stats %}{% set v = row.get(name) %}<td class="num">{% if v %}{{ v[0]|num if v[0] > 100 else "%.1f"|format(v[0]) }} <span class="muted">± {{ v[1]|num if v[1] > 100 else "%.1f"|format(v[1]) }}</span>{% endif %}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="empty">Not computed yet. The first snapshot is built shortly after start-up.</p>
+{% endif %}
+{% endblock %}

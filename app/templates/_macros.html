@@ -1,0 +1,14 @@
+{% macro hero(heroes, hero_id) -%}
+  {%- set h = heroes.get(hero_id) -%}
+  <span class="hero">{% if h and h.icon_url %}<img src="{{ h.icon_url }}" alt="" width="24" height="24" loading="lazy">{% endif %}{{ h.name if h else "Hero " ~ hero_id }}</span>
+{%- endmacro %}
+
+{% macro rank_badge(rank) -%}
+  {%- if rank == 1 %}<span class="badge mvp">MVP</span>
+  {%- elif rank in (2, 3) %}<span class="badge key">Key #{{ rank }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro score(v) -%}
+  {%- if v is none %}<span class="muted">—</span>{% else %}<span class="{{ 'pos' if v >= 0 else 'neg' }}">{{ "%+.2f"|format(v) }}</span>{% endif -%}
+{%- endmacro %}
