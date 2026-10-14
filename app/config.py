@@ -24,6 +24,8 @@ class Settings:
     seed_account_ids: list[int] = field(default_factory=lambda: _ids("TRACKED_ACCOUNT_IDS"))
     # How often tracked accounts are checked for new matches.
     sync_interval_s: int = field(default_factory=lambda: _int("SYNC_INTERVAL_S", 900))
+    # Opening a player's page re-pulls their full history, at most this often per player.
+    view_sync_cooldown_s: int = field(default_factory=lambda: _int("VIEW_SYNC_COOLDOWN_S", 120))
     # How often hero baselines are recomputed, and over how many days / matches.
     baseline_interval_s: int = field(default_factory=lambda: _int("BASELINE_INTERVAL_S", 86400))
     baseline_days: int = field(default_factory=lambda: _int("BASELINE_DAYS", 7))

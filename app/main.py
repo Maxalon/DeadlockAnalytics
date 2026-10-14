@@ -55,6 +55,7 @@ def create_app(settings: Settings | None = None, api: DeadlockApi | None = None)
         scheduler.stop()
 
     app = FastAPI(title="Deadlock Analytics", lifespan=lifespan, docs_url=None, redoc_url=None)
+    app.state.scheduler = scheduler
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
     @app.middleware("http")
@@ -105,7 +106,7 @@ def create_app(settings: Settings | None = None, api: DeadlockApi | None = None)
             conn.execute(
                 "INSERT OR IGNORE INTO accounts (account_id, added_at) VALUES (?, ?)", (account_id, int(time.time()))
             )
-        scheduler.request_sync()
+        scheduler.request_account_sync(account_id)
         return RedirectResponse("/accounts", status_code=303)
 
     @app.post("/accounts/{account_id}/delete")
@@ -120,9 +121,19 @@ def create_app(settings: Settings | None = None, api: DeadlockApi | None = None)
         scheduler.request_sync()
         return RedirectResponse("/", status_code=303)
 
+    @app.post("/players/{account_id}/sync")
+    def resync_player(account_id: int):
+        if db().execute("SELECT 1 FROM accounts WHERE account_id = ?", (account_id,)).fetchone():
+            scheduler.request_account_sync(account_id)
+        return RedirectResponse(f"/players/{account_id}", status_code=303)
+
     @app.get("/players/{account_id}", response_class=HTMLResponse)
     def player(request: Request, account_id: int, page: int = 1):
         account = db().execute("SELECT * FROM accounts WHERE account_id = ?", (account_id,)).fetchone()
+        # Viewing a tracked player re-pulls their history in the background; the page shows
+        # what is stored now and reloads itself once the re-pull is done (see player.html).
+        if account and time.time() - (account["last_full_sync_at"] or 0) >= settings.view_sync_cooldown_s:
+            scheduler.request_account_sync(account_id)
         page = max(page, 1)
         matches = queries.player_matches(db(), settings.database_path, account_id, PAGE_SIZE, (page - 1) * PAGE_SIZE)
         if account is None and not matches:
@@ -138,6 +149,7 @@ def create_app(settings: Settings | None = None, api: DeadlockApi | None = None)
             page_size=PAGE_SIZE,
             heroes_played=queries.hero_summary(db(), account_id),
             chart=charts.score_trend(trend),
+            syncing=account is not None and scheduler.is_syncing(account_id),
         )
 
     @app.get("/matches/{match_id}", response_class=HTMLResponse)

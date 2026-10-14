@@ -1,12 +1,22 @@
 {% extends "base.html" %}
 {% from "_macros.html" import hero, rank_badge, score %}
 {% block title %}{{ account.persona_name if account and account.persona_name else account_id }} · Deadlock Analytics{% endblock %}
+{% block head %}{% if syncing %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
 {% block content %}
 <section class="head">
   <div class="who">
     {% if account and account.avatar_url %}<img src="{{ account.avatar_url }}" alt="" width="56" height="56">{% endif %}
     <h1>{{ account.persona_name if account and account.persona_name else account_id }}</h1>
   </div>
+  {% if account %}
+  <div class="sync">
+    <span class="muted small">
+      {% if syncing %}Pulling matches…{% else %}Matches pulled {{ account.last_full_sync_at|dt }}{% endif %}
+      {% if account.last_error and not syncing %} · <span class="neg">last pull failed: {{ account.last_error }}</span>{% endif %}
+    </span>
+    <form method="post" action="/players/{{ account_id }}/sync"><button type="submit"{% if syncing %} disabled{% endif %}>Re-pull matches</button></form>
+  </div>
+  {% endif %}
 </section>
 
 {% if chart %}

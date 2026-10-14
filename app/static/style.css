@@ -22,6 +22,8 @@ h2 { font-size: 1.1rem; margin: 32px 0 10px; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .who { display: flex; align-items: center; gap: 12px; }
 .who img { border-radius: 8px; }
+.sync { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+button:disabled { opacity: .55; cursor: default; }
 .who div { display: flex; flex-direction: column; }
 .muted { color: var(--muted); }
 .small { font-size: .82rem; }
