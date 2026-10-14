@@ -8,15 +8,15 @@ version = "0.1.0"
 description = "Self-hosted Deadlock match analytics with a reconstruction of Valve's MVP score"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi==0.115.12",
-    "uvicorn[standard]==0.34.2",
+    "fastapi==0.143.1",
+    "uvicorn[standard]==0.54.0",
     "jinja2==3.1.6",
     "httpx==0.28.1",
-    "python-multipart==0.0.20",
+    "python-multipart==0.0.32",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==8.3.5", "ruff==0.11.8"]
+dev = ["pytest==9.1.1", "ruff==0.11.8"]
 
 [tool.setuptools]
 packages = ["app"]

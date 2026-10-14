@@ -63,7 +63,8 @@ def test_dark_is_default_and_light_is_remembered(tmp_path):
     r = c.get("/theme?to=light&next=/accounts", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/accounts"
     assert 'data-theme="light"' in c.get("/").text
-    assert c.get("/theme?to=dark&next=//evil.example", follow_redirects=False).headers["location"] == "/"
+    for bad in ("//evil.example", "/\\evil.example", "https://evil.example"):
+        assert c.get("/theme", params={"to": "dark", "next": bad}, follow_redirects=False).headers["location"] == "/"
     assert 'data-theme="dark"' in c.get("/").text
 
 
