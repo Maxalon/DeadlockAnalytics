@@ -28,16 +28,16 @@ keep the baselines of their own patch. Baselines always come from
 [deadlock-api.com](https://deadlock-api.com). Without the fetcher, tracked matches do too, but
 it only has the matches it happened to collect, usually 30–90 minutes after they end.
 
-Accounts: set `TRACKED_ACCOUNT_IDS` for the first start, then add or remove accounts at
-`/accounts` (SteamID3, SteamID64 or a `steamcommunity.com/profiles/…` link). There is no
-login, so run it on a private network or behind an authenticating proxy.
+Accounts are added and removed at `/accounts` (SteamID3, SteamID64 or a
+`steamcommunity.com/profiles/…` link). There is no login, so run it on a private network or
+behind an authenticating proxy.
 
 ## Running it
 
 CI publishes `ghcr.io/maxalon/deadlockanalytics:latest` on every push to `main`.
 
 ```sh
-cp .env.example .env    # set TRACKED_ACCOUNT_IDS; all settings are documented there
+cp .env.example .env    # all settings are optional and documented there
 docker compose up -d
 ```
 
@@ -45,7 +45,8 @@ docker compose up -d
 reverse proxy. Adjust that to your setup. Data lives in the `deadlock_data` volume.
 
 The fetcher needs a Steam account with Deadlock access, logged in once with
-`docker compose run --rm -it fetcher npm run login`; tracked players then add it as a friend.
+`docker compose run --rm -it fetcher npm run login`; tracked players then add it as a friend
+(it accepts requests only from accounts tracked at `/accounts`).
 Until then the site falls back to deadlock-api, and `/accounts` shows which source each sync used.
 
 To keep the container up to date, either enable the systemd timer in `deploy/`, or use the
@@ -58,7 +59,7 @@ skips itself unless its secrets are configured.
 pip install -e ".[dev]"
 pytest
 ruff check app tests && ruff format --check app tests
-DATABASE_PATH=./dev.sqlite3 TRACKED_ACCOUNT_IDS=<id> uvicorn app.main:create_app --factory --reload
+DATABASE_PATH=./dev.sqlite3 uvicorn app.main:create_app --factory --reload
 ```
 
 Settings are documented in `.env.example`.

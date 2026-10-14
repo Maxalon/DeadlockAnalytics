@@ -125,3 +125,39 @@ def test_client_unreachable():
 def test_client_history_returns_matches():
     f = client({"/history/5": (200, {"account_id": 5, "complete": True, "matches": [history_entry(1)]})})
     assert json.loads(json.dumps(f.history(5)))[0]["match_id"] == 1
+
+
+def test_scheduler_sends_tracked_accounts_to_the_bot_when_they_change(conn):
+    from app.scheduler import Scheduler
+
+    fetcher = FakeFetcher()
+    sched = Scheduler(settings(), FakeApi(), fetcher)
+    track(conn)
+    sched._push_friends(conn)
+    sched._push_friends(conn)  # unchanged: not sent again
+    assert fetcher.friends_sent == [[ME]]
+
+    conn.execute("INSERT INTO accounts (account_id, added_at) VALUES (7, 0)")
+    fetcher.friends_fail = True
+    sched._push_friends(conn)  # fetcher down: retried on the next tick
+    fetcher.friends_fail = False
+    sched._push_friends(conn)
+    assert fetcher.friends_sent == [[ME], [7, ME]]
+
+    conn.execute("DELETE FROM accounts")
+    sched._push_friends(conn)
+    assert fetcher.friends_sent[-1] == []
+
+
+def test_client_sends_friends():
+    seen = {}
+
+    def handler(request):
+        seen["method"], seen["body"] = request.method, json.loads(request.content)
+        return httpx.Response(200, json={"account_ids": [1, 2]})
+
+    f = Fetcher(
+        "http://fetcher", client=httpx.Client(base_url="http://fetcher", transport=httpx.MockTransport(handler))
+    )
+    f.set_friends([1, 2])
+    assert seen == {"method": "PUT", "body": {"account_ids": [1, 2]}}

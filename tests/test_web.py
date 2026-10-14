@@ -49,11 +49,6 @@ def test_add_and_remove_account(tmp_path):
     assert "None yet" in c.get("/accounts").text
 
 
-def test_seed_accounts_from_env(tmp_path):
-    c, _ = client(tmp_path, seed_account_ids=[76561197960265728 + 7])
-    assert "/players/7" in c.get("/accounts").text
-
-
 def test_cross_site_posts_are_refused(tmp_path):
     c, _ = client(tmp_path)
     r = c.post("/accounts", data={"account": "42"}, headers={"origin": "https://evil.example"})

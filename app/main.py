@@ -31,12 +31,6 @@ def create_app(
     settings = settings or Settings()
     setup = connect(settings.database_path)
     init(setup)
-    with transaction(setup) as conn:
-        for account_id in settings.seed_account_ids:
-            conn.execute(
-                "INSERT OR IGNORE INTO accounts (account_id, added_at) VALUES (?, ?)",
-                (queries.parse_account_id(str(account_id)), int(time.time())),
-            )
     if settings.database_path != ":memory:":
         setup.close()
     if fetcher is None and settings.fetcher_url:
@@ -119,6 +113,7 @@ def create_app(
         # Stops tracking; already-stored matches stay (other tracked players may share them).
         with transaction(db()) as conn:
             conn.execute("DELETE FROM accounts WHERE account_id = ?", (account_id,))
+        scheduler.accounts_changed()
         return RedirectResponse("/accounts", status_code=303)
 
     @app.post("/sync")

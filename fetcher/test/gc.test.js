@@ -43,7 +43,7 @@ class FakeSteam extends EventEmitter {
 }
 
 function session(client, allowed = [42]) {
-  const gc = new DeadlockGC({ client, refreshToken: 't', saveRefreshToken() {}, allowedFriends: () => new Set(allowed), log: quiet });
+  const gc = new DeadlockGC({ client, refreshToken: 't', saveRefreshToken() {}, allowedFriends: (id) => allowed.includes(id), log: quiet });
   gc._lastRequestAt = -Infinity;
   return gc;
 }
@@ -108,4 +108,17 @@ test('accepts friend requests only from allowed accounts', () => {
   client.emit('friendRelationship', steamId(43), SteamUser.EFriendRelationship.RequestRecipient);
   client.emit('friendRelationship', steamId(42), SteamUser.EFriendRelationship.Friend);
   assert.deepStrictEqual(client.added, [42]);
+});
+
+test('a request from a player added later is accepted once the list allows it', () => {
+  const client = new FakeSteam();
+  const allowed = [];
+  const gc = session(client, allowed);
+  const id64 = SteamID.fromIndividualAccountID(43).getSteamID64();
+  client.myFriends = { [id64]: SteamUser.EFriendRelationship.RequestRecipient };
+  gc.acceptPendingRequests();
+  assert.deepStrictEqual(client.added, []);
+  allowed.push(43);
+  gc.acceptPendingRequests();
+  assert.deepStrictEqual(client.added, [43]);
 });

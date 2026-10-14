@@ -7,9 +7,13 @@ const { decodeMetadataFile } = require('./metadata');
 const STATUS = { not_ready: 503, timeout: 504, private: 403, rate_limited: 429, invalid_match: 404, in_flight: 409, gc_error: 502 };
 
 class Service {
-  /** @param {{gc: import('./gc').DeadlockGC, cacheDir: string, replayUrl: Function, fetch?: typeof fetch}} deps */
-  constructor({ gc, cacheDir, replayUrl, fetch: fetchFn = fetch }) {
+  /**
+   * @param {{gc: import('./gc').DeadlockGC, friends: import('./friends').FriendList, cacheDir: string,
+   *          replayUrl: Function, fetch?: typeof fetch}} deps
+   */
+  constructor({ gc, friends, cacheDir, replayUrl, fetch: fetchFn = fetch }) {
     this.gc = gc;
+    this.friends = friends;
     this.cacheDir = cacheDir;
     this.replayUrl = replayUrl;
     this.fetch = fetchFn;
@@ -48,10 +52,26 @@ class Service {
     return { status: 200, body: match };
   }
 
-  /** Route a GET path to a handler; errors from the GC become HTTP statuses. */
-  async handle(pathname) {
+  setFriends(body) {
+    let accountIds;
+    try {
+      accountIds = this.friends.replace(body && body.account_ids);
+    } catch (err) {
+      if (err instanceof TypeError) return { status: 400, body: { error: 'bad_request', message: err.message } };
+      throw err;
+    }
+    this.gc.acceptPendingRequests();
+    return { status: 200, body: { account_ids: accountIds } };
+  }
+
+  /** Route a request to a handler; errors from the GC become HTTP statuses. */
+  async handle(pathname, method = 'GET', body = undefined) {
     try {
       let m;
+      if (pathname === '/friends') {
+        return method === 'PUT' ? this.setFriends(body) : { status: 405, body: { error: 'method_not_allowed' } };
+      }
+      if (method !== 'GET') return { status: 405, body: { error: 'method_not_allowed' } };
       if (pathname === '/health') return this.health();
       if ((m = pathname.match(/^\/history\/(\d{1,10})$/))) return await this.history(Number(m[1]));
       if ((m = pathname.match(/^\/matches\/(\d{1,15})$/))) return await this.match(Number(m[1]));

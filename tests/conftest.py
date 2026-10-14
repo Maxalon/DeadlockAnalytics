@@ -86,6 +86,8 @@ class FakeFetcher:
         self.ready = ready
         self.errors = dict(errors or {})  # match_id -> FetcherError
         self.fetched = []
+        self.friends_sent = []
+        self.friends_fail = False
 
     def ensure_ready(self):
         from app.fetcher import FetcherError
@@ -101,3 +103,10 @@ class FakeFetcher:
         if match_id in self.errors:
             raise self.errors[match_id]
         return self.matches[match_id]
+
+    def set_friends(self, account_ids):
+        from app.fetcher import FetcherError
+
+        if self.friends_fail:
+            raise FetcherError("unreachable", "fetcher unreachable")
+        self.friends_sent.append(list(account_ids))

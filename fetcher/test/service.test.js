@@ -7,19 +7,24 @@ const path = require('node:path');
 const { Service } = require('../src/service');
 const { GcError } = require('../src/gc');
 const config = require('../src/config');
+const { FriendList } = require('../src/friends');
 
 const fixture = fs.readFileSync(path.join(__dirname, 'fixtures', '115701682.meta.bz2'));
 
 function service({ salts, download }) {
   const calls = { salts: 0, urls: [] };
   const gc = {
+    accepted: 0,
+    acceptPendingRequests() { this.accepted += 1; },
     status: () => ({ gc_ready: true }),
     matchSalts: async (id) => { calls.salts += 1; return salts(id); },
     fullHistory: async () => ({ matches: [{ match_id: '115701682', hero_id: 3 }], complete: true }),
   };
   const fetchFn = async (url) => { calls.urls.push(url); return download(url); };
-  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
-  return { svc: new Service({ gc, cacheDir, replayUrl: config.replayUrl, fetch: fetchFn }), calls };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
+  const friends = new FriendList(path.join(dir, 'friends.json'));
+  const cacheDir = path.join(dir, 'matches');
+  return { svc: new Service({ gc, friends, cacheDir, replayUrl: config.replayUrl, fetch: fetchFn }), calls, gc, friends, dir };
 }
 
 test('match: salts -> download from the replay cluster -> decoded, then cached', async () => {
@@ -50,4 +55,20 @@ test('history and routing', async () => {
   assert.deepStrictEqual(res.body.matches, [{ match_id: 115701682, hero_id: 3 }]);
   assert.strictEqual((await svc.handle('/nope')).status, 404);
   assert.strictEqual((await svc.handle('/history/abc')).status, 404);
+});
+
+test('friends: the web app sets the list, it survives a restart, and bad input is refused', async () => {
+  const { svc, gc, friends, dir } = service({ salts: () => null, download: () => null });
+  const res = await svc.handle('/friends', 'PUT', { account_ids: [7, 113956776, 7] });
+  assert.deepStrictEqual(res, { status: 200, body: { account_ids: [7, 113956776] } });
+  assert.ok(friends.has(113956776) && !friends.has(8));
+  assert.strictEqual(gc.accepted, 1); // pending requests are re-checked against the new list
+  assert.ok(new FriendList(path.join(dir, 'friends.json')).has(7));
+
+  for (const body of [{}, { account_ids: ['7'] }, { account_ids: [-1] }, { account_ids: [2 ** 40] }]) {
+    assert.strictEqual((await svc.handle('/friends', 'PUT', body)).status, 400);
+  }
+  assert.ok(friends.has(7)); // unchanged by the refused requests
+  assert.strictEqual((await svc.handle('/friends')).status, 405);
+  assert.strictEqual((await svc.handle('/history/1', 'PUT', {})).status, 405);
 });

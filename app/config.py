@@ -9,11 +9,6 @@ def _int(name: str, default: int) -> int:
     return int(value) if value else default
 
 
-def _ids(name: str) -> list[int]:
-    raw = os.environ.get(name, "")
-    return [int(x) for x in raw.replace(";", ",").split(",") if x.strip()]
-
-
 @dataclass(frozen=True)
 class Settings:
     database_path: str = field(default_factory=lambda: os.environ.get("DATABASE_PATH", "/data/deadlock.sqlite3"))
@@ -22,8 +17,6 @@ class Settings:
     api_key: str = field(default_factory=lambda: os.environ.get("DEADLOCK_API_KEY", ""))
     # The fetcher service (Steam bot), e.g. http://fetcher:8001. Empty: deadlock-api only.
     fetcher_url: str = field(default_factory=lambda: os.environ.get("FETCHER_URL", "").strip())
-    # Accounts added on first start (SteamID3 or SteamID64). More can be added in the UI.
-    seed_account_ids: list[int] = field(default_factory=lambda: _ids("TRACKED_ACCOUNT_IDS"))
     # How often tracked accounts are checked for new matches.
     sync_interval_s: int = field(default_factory=lambda: _int("SYNC_INTERVAL_S", 900))
     # Opening a player's page re-pulls their full history, at most this often per player.

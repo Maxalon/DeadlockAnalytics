@@ -33,7 +33,7 @@ class DeadlockGC extends EventEmitter {
    * @param {SteamUser} [opts.client] injectable for tests
    * @param {string} opts.refreshToken from `npm run login`
    * @param {(token: string) => void} opts.saveRefreshToken called when Steam renews the token
-   * @param {() => Set<number>} opts.allowedFriends SteamID3s whose friend requests are accepted
+   * @param {(accountId: number) => boolean} opts.allowedFriends whether to accept this SteamID3's friend request
    */
   constructor({ client, refreshToken, saveRefreshToken, allowedFriends, log = console }) {
     super();
@@ -92,12 +92,8 @@ class DeadlockGC extends EventEmitter {
       }
     });
     c.on('friendRelationship', (steamID, relationship) => this._maybeAccept(steamID, relationship));
-    c.on('friendsList', () => {
-      // Requests that arrived while the bot was offline.
-      for (const [id64, relationship] of Object.entries(c.myFriends || {})) {
-        this._maybeAccept(new SteamID(id64), relationship);
-      }
-    });
+    // Requests that arrived while the bot was offline.
+    c.on('friendsList', () => this.acceptPendingRequests());
     c.on('disconnected', (eresult, msg) => {
       this.loggedIn = false;
       this._notReady();
@@ -112,14 +108,21 @@ class DeadlockGC extends EventEmitter {
     });
   }
 
+  /** Accept open friend requests that are allowed now, e.g. after a player was added to the site. */
+  acceptPendingRequests() {
+    for (const [id64, relationship] of Object.entries(this.client.myFriends || {})) {
+      this._maybeAccept(new SteamID(id64), relationship);
+    }
+  }
+
   _maybeAccept(steamID, relationship) {
     if (relationship !== SteamUser.EFriendRelationship.RequestRecipient) return;
     const accountId = steamID.accountid;
-    if (this.allowedFriends().has(accountId)) {
+    if (this.allowedFriends(accountId)) {
       this.log.info(`steam: accepting friend request from ${accountId}`);
       this.client.addFriend(steamID);
     } else {
-      this.log.info(`steam: ignoring friend request from ${accountId} (not in FRIEND_ACCOUNT_IDS)`);
+      this.log.info(`steam: ignoring friend request from ${accountId} (not a tracked account)`);
     }
   }
 

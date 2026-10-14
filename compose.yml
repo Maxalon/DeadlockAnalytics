@@ -1,7 +1,7 @@
 # Deadlock Analytics. Reached by a reverse proxy over the
 # shared external `edge` network as `deadlock-analytics:8000`; no host ports published.
 #
-#   cp .env.example .env    # add TRACKED_ACCOUNT_IDS (more can be added in the UI)
+#   cp .env.example .env    # optional settings; accounts are added in the UI
 #   docker compose up -d
 #
 # Updates: CI publishes ghcr.io/maxalon/deadlockanalytics:latest on every push to main and
