@@ -5,3 +5,4 @@ __pycache__/
 *.sqlite3*
 build/
 *.egg-info/
+fetcher/node_modules/

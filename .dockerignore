@@ -8,3 +8,4 @@ deploy
 *.sqlite3*
 build
 *.egg-info
+fetcher

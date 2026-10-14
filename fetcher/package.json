@@ -1,0 +1,20 @@
+{
+  "name": "deadlock-fetcher",
+  "private": true,
+  "description": "Fetches tracked players' Deadlock match history and match data through a Steam bot account",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "login": "node src/login.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "protobufjs": "^8.8.1",
+    "seek-bzip": "^2.0.0",
+    "steam-user": "^5.3.0",
+    "steamid": "^2.1.0"
+  }
+}
