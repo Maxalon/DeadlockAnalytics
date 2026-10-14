@@ -1,8 +1,8 @@
 'use strict';
 // Session with Deadlock's Game Coordinator (GC) through a logged-in Steam bot account.
 //
-// Handshake (same as the official client): log in, report "playing" Deadlock, then send an
-// empty ClientHello every few seconds until the GC answers with ClientWelcome. Requests are
+// Handshake (same as the official client): log in, report "playing" Deadlock, then send a
+// ClientHello every few seconds until the GC answers with ClientWelcome. Requests are
 // GC "jobs": steam-user routes each response back to the callback of its request.
 const { EventEmitter } = require('node:events');
 const SteamUser = require('steam-user');
@@ -17,6 +17,8 @@ const READY_TIMEOUT_MS = 60000;
 // Space requests out; we only ever need a handful, and Steam rate-limits per account.
 const MIN_REQUEST_GAP_MS = 1500;
 const MAX_HISTORY_PAGES = 100;
+// What the game client sends (see proto/deadlock.proto).
+const HELLO = { client_session_need: 104, client_launcher: 0, engine: 1 };
 
 class GcError extends Error {
   constructor(code, message) {
@@ -123,7 +125,8 @@ class DeadlockGC extends EventEmitter {
 
   _startHello() {
     this._notReady();
-    const hello = () => this.client.sendToGC(APP_ID, MSG.HELLO, {}, Buffer.alloc(0));
+    const payload = Buffer.from(proto.ClientHello.encode(proto.ClientHello.create(HELLO)).finish());
+    const hello = () => this.client.sendToGC(APP_ID, MSG.HELLO, {}, payload);
     hello();
     this._helloTimer = setInterval(hello, HELLO_INTERVAL_MS);
   }

@@ -8,6 +8,7 @@ const root = new protobuf.Root().loadSync(path.join(__dirname, '..', 'proto', 'd
 const type = (name) => root.lookupType(name);
 
 module.exports = {
+  ClientHello: type('CMsgClientHello'),
   GetMatchHistory: type('CMsgClientToGCGetMatchHistory'),
   GetMatchHistoryResponse: type('CMsgClientToGCGetMatchHistoryResponse'),
   GetMatchMetaData: type('CMsgClientToGCGetMatchMetaData'),
