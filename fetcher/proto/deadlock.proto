@@ -1,7 +1,15 @@
 // The subset of Deadlock's Game Coordinator messages this service uses.
-// Field numbers are copied from SteamDatabase/Protobufs (deadlock/citadel_gcmessages_client.proto
-// and citadel_gcmessages_common.proto); fields we don't read are left out and skipped on decode.
+// Field numbers are copied from SteamDatabase/Protobufs (deadlock/citadel_gcmessages_client.proto,
+// citadel_gcmessages_common.proto and gcsdk_gcmessages.proto); fields we don't read are left out and skipped on decode.
 syntax = "proto2";
+
+// k_EMsgGCClientHello = 4006. Deadlock runs on Source 2; a hello that leaves `engine` at its
+// default (Source 1) is ignored and the GC never sends its welcome.
+message CMsgClientHello {
+  optional uint32 client_session_need = 3;
+  optional uint32 client_launcher = 4; // PartnerAccountType; 0 = PARTNER_NONE
+  optional uint32 engine = 7;          // ESourceEngine; 1 = k_ESE_Source2
+}
 
 // k_EMsgClientToGCGetMatchHistory = 9112, response 9113
 message CMsgClientToGCGetMatchHistory {

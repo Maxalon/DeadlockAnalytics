@@ -27,7 +27,10 @@ class FakeSteam extends EventEmitter {
   addFriend(steamID) { this.added.push(steamID.accountid); }
   sendToGC(appid, msgType, _hdr, payload, cb) {
     this.sent.push(msgType);
-    if (msgType === MSG.HELLO) setImmediate(() => this.emit('receivedFromGC', APP_ID, MSG.WELCOME, Buffer.alloc(0)));
+    // Like the real GC, only a Source 2 hello gets a welcome.
+    if (msgType === MSG.HELLO && proto.ClientHello.decode(payload).engine === 1) {
+      setImmediate(() => this.emit('receivedFromGC', APP_ID, MSG.WELCOME, Buffer.alloc(0)));
+    }
     if (msgType === MSG.HISTORY) {
       const req = proto.toObject(proto.GetMatchHistory, proto.GetMatchHistory.decode(payload));
       setImmediate(() => cb(appid, msgType + 1, enc(proto.GetMatchHistoryResponse, this.onHistory(req))));
