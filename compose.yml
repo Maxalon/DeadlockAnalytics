@@ -5,7 +5,7 @@
 #   docker compose up -d
 #
 # Updates: CI publishes ghcr.io/maxalon/deadlockanalytics:latest on every push to main and
-# deploys it over Tailscale SSH, or a systemd timer on the box pulls it (README "Deploy").
+# can deploy it over SSH, or a systemd timer on the host pulls it (see deploy/).
 
 services:
   web:
