@@ -60,3 +60,13 @@ def test_cross_site_posts_are_refused(tmp_path):
     assert r.status_code == 403
     ok = c.post("/accounts", data={"account": "42"}, headers={"origin": "http://testserver"}, follow_redirects=False)
     assert ok.status_code == 303
+
+
+def test_dark_is_default_and_light_is_remembered(tmp_path):
+    c, _ = client(tmp_path)
+    assert 'data-theme="dark"' in c.get("/").text
+    r = c.get("/theme?to=light&next=/accounts", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/accounts"
+    assert 'data-theme="light"' in c.get("/").text
+    assert c.get("/theme?to=dark&next=//evil.example", follow_redirects=False).headers["location"] == "/"
+    assert 'data-theme="dark"' in c.get("/").text

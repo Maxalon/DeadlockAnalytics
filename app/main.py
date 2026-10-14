@@ -78,6 +78,7 @@ def create_app(settings: Settings | None = None, api: DeadlockApi | None = None)
 
     def render(request: Request, name: str, **ctx):
         ctx.setdefault("heroes", queries.heroes(db()))
+        ctx["theme"] = "light" if request.cookies.get("theme") == "light" else "dark"
         return templates.TemplateResponse(request, name, ctx)
 
     @app.get("/", response_class=HTMLResponse)
@@ -152,6 +153,14 @@ def create_app(settings: Settings | None = None, api: DeadlockApi | None = None)
         snap = queries.latest_snapshot(db())
         table = queries.snapshot_table(db(), snap["snapshot_id"]) if snap else []
         return render(request, "model.html", snapshot=snap, table=table, stats=scoring.STATS)
+
+    @app.get("/theme")
+    def set_theme(to: str = "dark", next: str = "/"):
+        # Only same-site paths, so this can't be used as an open redirect.
+        target = next if next.startswith("/") and not next.startswith("//") else "/"
+        resp = RedirectResponse(target, status_code=303)
+        resp.set_cookie("theme", "light" if to == "light" else "dark", max_age=365 * 86400, samesite="lax")
+        return resp
 
     @app.get("/healthz")
     def healthz():

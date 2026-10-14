@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -13,6 +13,7 @@
       <a href="/">Players</a>
       <a href="/accounts">Accounts</a>
       <a href="/model">MVP model</a>
+      <a class="theme" href="/theme?to={{ 'dark' if theme == 'light' else 'light' }}&amp;next={{ request.url.path | urlencode }}">{{ "Dark" if theme == "light" else "Light" }} mode</a>
     </nav>
   </header>
   <main>
