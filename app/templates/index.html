@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import score %}
+{% block content %}
+<section class="head">
+  <h1>Tracked players</h1>
+  <form method="post" action="/sync"><button type="submit">Sync now</button></form>
+</section>
+
+{% if not accounts %}
+  <p class="empty">No accounts tracked yet. <a href="/accounts">Add one</a> — your SteamID3 or SteamID64 works.</p>
+{% else %}
+<div class="cards">
+  {% for a in accounts %}
+  <a class="card" href="/players/{{ a.account_id }}">
+    <div class="who">
+      {% if a.avatar_url %}<img src="{{ a.avatar_url }}" alt="" width="48" height="48">{% endif %}
+      <div>
+        <strong>{{ a.persona_name or a.account_id }}</strong>
+        <span class="muted small">{{ a.account_id }}</span>
+      </div>
+    </div>
+    <dl>
+      <div><dt>Matches</dt><dd>{{ a.games }}</dd></div>
+      <div><dt>Win rate</dt><dd>{{ "%.0f%%"|format(100 * a.wins / a.games) if a.games else "—" }}</dd></div>
+      <div><dt>MVP</dt><dd>{{ a.mvps or 0 }}</dd></div>
+      <div><dt>Key Player</dt><dd>{{ a.key_players or 0 }}</dd></div>
+    </dl>
+    <p class="muted small">Last match {{ a.last_match|dt }}{% if a.last_error %} · <span class="neg">sync error</span>{% endif %}</p>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<section class="status">
+  <h2>Data</h2>
+  <ul class="muted small">
+    <li>Last sync: {{ jobs.sync.last_finished_at|dt if jobs.sync else "not yet" }}{% if jobs.sync and jobs.sync.last_error %} — <span class="neg">{{ jobs.sync.last_error }}</span>{% endif %}</li>
+    <li>Hero baselines: {% if snapshot %}{{ snapshot.n_matches|num }} matches, {{ snapshot.window_start|dt }} → {{ snapshot.window_end|dt }}{% else %}not computed yet (first run takes a few minutes){% endif %}{% if jobs.baselines and jobs.baselines.last_error %} — <span class="neg">{{ jobs.baselines.last_error }}</span>{% endif %}</li>
+    <li>Source: <a href="https://deadlock-api.com">deadlock-api.com</a>. New matches usually appear 30–90 minutes after they end.</li>
+  </ul>
+</section>
+{% endblock %}

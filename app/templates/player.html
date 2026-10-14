@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_macros.html" import hero, rank_badge, score %}
+{% block title %}{{ account.persona_name if account and account.persona_name else account_id }} · Deadlock Analytics{% endblock %}
+{% block content %}
+<section class="head">
+  <div class="who">
+    {% if account and account.avatar_url %}<img src="{{ account.avatar_url }}" alt="" width="56" height="56">{% endif %}
+    <h1>{{ account.persona_name if account and account.persona_name else account_id }}</h1>
+  </div>
+</section>
+
+{% if chart %}
+<section>
+  <h2>MVP score, recent matches</h2>
+  {{ chart }}
+  <p class="legend small"><span><i class="key-you"></i>your score</span><span><i class="key-mvp"></i>the match's MVP score</span><span><i class="dot-mvp"></i>MVP</span><span><i class="dot-key"></i>Key Player</span></p>
+</section>
+{% endif %}
+
+<section>
+  <h2>Heroes</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Hero</th><th class="num">Games</th><th class="num">Win %</th><th class="num">MVP</th><th class="num">Key</th><th class="num">K / D / A</th><th class="num">Souls</th><th class="num">Damage</th></tr></thead>
+    <tbody>
+    {% for h in heroes_played %}
+      <tr>
+        <td>{{ hero(heroes, h.hero_id) }}</td>
+        <td class="num">{{ h.games }}</td>
+        <td class="num">{{ "%.0f"|format(100 * h.wins / h.games) }}</td>
+        <td class="num">{{ h.mvps }}</td>
+        <td class="num">{{ h.key_players }}</td>
+        <td class="num">{{ "%.1f / %.1f / %.1f"|format(h.kills, h.deaths, h.assists) }}</td>
+        <td class="num">{{ h.net_worth|num }}</td>
+        <td class="num">{{ h.player_damage|num }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Matches</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Date</th><th>Hero</th><th>Result</th><th class="num">K / D / A</th><th class="num">Souls</th><th class="num">Score</th><th class="num">vs MVP</th><th>Valve</th></tr></thead>
+    <tbody>
+    {% for m in matches %}
+      <tr>
+        <td><a href="/matches/{{ m.match_id }}">{{ m.start_time|dt }}</a> <span class="muted small">{{ m.match_mode }} · {{ m.duration_s|mins }}</span></td>
+        <td>{{ hero(heroes, m.hero_id) }}</td>
+        <td class="{{ 'pos' if m.won else 'neg' }}">{{ "Win" if m.won else "Loss" }}</td>
+        <td class="num">{{ m.kills }} / {{ m.deaths }} / {{ m.assists }}</td>
+        <td class="num">{{ m.net_worth|num }}</td>
+        <td class="num">{{ score(m.score) }}</td>
+        <td class="num">{{ score(m.mvp_gap) }}</td>
+        <td>{{ rank_badge(m.mvp_rank) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">No matches yet. The first sync can take a few minutes.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <nav class="pager">
+    {% if page > 1 %}<a href="?page={{ page - 1 }}">← Newer</a>{% endif %}
+    {% if matches|length == page_size %}<a href="?page={{ page + 1 }}">Older →</a>{% endif %}
+  </nav>
+</section>
+{% endblock %}

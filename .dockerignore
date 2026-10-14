@@ -1,0 +1,10 @@
+.git
+.github
+research
+tests
+deploy
+**/__pycache__
+.env
+*.sqlite3*
+build
+*.egg-info

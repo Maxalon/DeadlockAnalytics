@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Accounts · Deadlock Analytics{% endblock %}
+{% block content %}
+<h1>Accounts</h1>
+<form class="add" method="post" action="/accounts">
+  <label for="account">SteamID3, SteamID64 or steamcommunity.com/profiles/… link</label>
+  <div class="row">
+    <input id="account" name="account" required autocomplete="off" placeholder="e.g. 113956776">
+    <button type="submit">Add</button>
+  </div>
+  {% if error %}<p class="neg small">{{ error }}</p>{% endif %}
+  <p class="muted small">New accounts are backfilled from 2026-01-06, when Valve started reporting MVP ranks.</p>
+</form>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Account</th><th class="num">Matches</th><th>Last sync</th><th></th></tr></thead>
+  <tbody>
+  {% for a in accounts %}
+    <tr>
+      <td><a href="/players/{{ a.account_id }}">{{ a.persona_name or a.account_id }}</a> <span class="muted small">{{ a.account_id }}</span></td>
+      <td class="num">{{ a.games }}</td>
+      <td>{{ a.last_synced_at|dt }}{% if a.last_error %}<br><span class="neg small">{{ a.last_error }}</span>{% endif %}</td>
+      <td><form method="post" action="/accounts/{{ a.account_id }}/delete"><button class="link" type="submit">Stop tracking</button></form></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">None yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

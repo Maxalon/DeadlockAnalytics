@@ -1,0 +1,12 @@
+# Pull the newest image from GHCR and recreate the container if it changed.
+# Install: see README "Deploy". Assumes the repo is checked out at /srv/deadlockanalytics.
+[Unit]
+Description=Update Deadlock Analytics container
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/deadlockanalytics
+ExecStart=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
