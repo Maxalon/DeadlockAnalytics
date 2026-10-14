@@ -18,13 +18,19 @@ class FakeSteam extends EventEmitter {
     this.onMetadata = onMetadata;
     this.sent = [];
     this.added = [];
+    this.removed = [];
+    this.blocked = [];
+    this.unblocked = [];
     this.myFriends = {};
   }
   logOn() { this.steamID = new SteamID('76561199000000001'); setImmediate(() => this.emit('loggedOn')); }
   logOff() {}
   setPersona() {}
   gamesPlayed(apps) { this.playing = apps; }
-  addFriend(steamID) { this.added.push(steamID.accountid); }
+  async addFriend(steamID) { this.added.push(steamID.accountid); }
+  removeFriend(steamID) { this.removed.push(steamID.accountid); }
+  async blockUser(steamID) { this.blocked.push(steamID.accountid); }
+  async unblockUser(steamID) { this.unblocked.push(steamID.accountid); }
   sendToGC(appid, msgType, _hdr, payload, cb) {
     this.sent.push(msgType);
     // Like the real GC, only a Source 2 hello gets a welcome.
@@ -42,8 +48,8 @@ class FakeSteam extends EventEmitter {
   }
 }
 
-function session(client, allowed = [42]) {
-  const gc = new DeadlockGC({ client, refreshToken: 't', saveRefreshToken() {}, allowedFriends: () => new Set(allowed), log: quiet });
+function session(client) {
+  const gc = new DeadlockGC({ client, refreshToken: 't', saveRefreshToken() {}, log: quiet });
   gc._lastRequestAt = -Infinity;
   return gc;
 }
@@ -100,12 +106,64 @@ test('match salts', async () => {
   gc.stop();
 });
 
-test('accepts friend requests only from allowed accounts', () => {
+const R = SteamUser.EFriendRelationship;
+const id64 = (account) => SteamID.fromIndividualAccountID(account).getSteamID64();
+
+async function loggedIn(myFriends) {
   const client = new FakeSteam();
-  session(client, [42]);
-  const steamId = (account) => SteamID.fromIndividualAccountID(account);
-  client.emit('friendRelationship', steamId(42), SteamUser.EFriendRelationship.RequestRecipient);
-  client.emit('friendRelationship', steamId(43), SteamUser.EFriendRelationship.RequestRecipient);
-  client.emit('friendRelationship', steamId(42), SteamUser.EFriendRelationship.Friend);
+  client.myFriends = myFriends;
+  client.users = { [id64(42)]: { player_name: 'player42' } };
+  const gc = session(client);
+  gc.start();
+  await new Promise((r) => gc.once('ready', r));
+  return { client, gc };
+}
+
+test('friend requests are never accepted automatically', async () => {
+  const { client, gc } = await loggedIn({ [id64(42)]: R.RequestRecipient });
+  client.emit('friendRelationship', SteamID.fromIndividualAccountID(43), R.RequestRecipient);
+  client.emit('friendsList');
+  assert.deepStrictEqual(client.added, []);
+  gc.stop();
+});
+
+test('friends list is grouped for the website', async () => {
+  const { gc } = await loggedIn({
+    [id64(42)]: R.RequestRecipient, [id64(7)]: R.Friend, [id64(9)]: R.Blocked, [id64(11)]: R.RequestInitiator,
+  });
+  assert.deepStrictEqual(gc.friends(), {
+    logged_in: true,
+    incoming: [{ account_id: 42, name: 'player42' }],
+    friends: [{ account_id: 7, name: null }],
+    blocked: [{ account_id: 9, name: null }],
+  });
+  gc.stop();
+});
+
+test('friend actions only apply to accounts in the matching state', async () => {
+  const { client, gc } = await loggedIn({ [id64(42)]: R.RequestRecipient, [id64(7)]: R.Friend, [id64(9)]: R.Blocked });
+  await gc.friendAction(42, 'accept');
   assert.deepStrictEqual(client.added, [42]);
+  // accept never sends a new invite to someone who didn't ask
+  await assert.rejects(gc.friendAction(5, 'accept'), { code: 'conflict' });
+  await assert.rejects(gc.friendAction(7, 'decline'), { code: 'conflict' });
+  await gc.friendAction(7, 'remove');
+  await gc.friendAction(9, 'unblock');
+  await gc.friendAction(5, 'block');
+  assert.deepStrictEqual([client.added, client.removed, client.unblocked, client.blocked], [[42], [7], [9], [5]]);
+  await assert.rejects(gc.friendAction(5, 'befriend'), { code: 'bad_request' });
+  await assert.rejects(gc.friendAction(0, 'block'), { code: 'bad_request' });
+  gc.stop();
+});
+
+test('decline all open requests', async () => {
+  const { client, gc } = await loggedIn({ [id64(42)]: R.RequestRecipient, [id64(43)]: R.RequestRecipient, [id64(7)]: R.Friend });
+  assert.strictEqual(gc.declineAll(), 2);
+  assert.deepStrictEqual(client.removed, [42, 43]);
+  gc.stop();
+});
+
+test('friend actions need a Steam login', async () => {
+  const gc = session(new FakeSteam());
+  await assert.rejects(gc.friendAction(42, 'accept'), { code: 'not_ready' });
 });

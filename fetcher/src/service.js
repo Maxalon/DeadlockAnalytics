@@ -4,10 +4,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { decodeMetadataFile } = require('./metadata');
 
-const STATUS = { not_ready: 503, timeout: 504, private: 403, rate_limited: 429, invalid_match: 404, in_flight: 409, gc_error: 502 };
+const STATUS = {
+  not_ready: 503, timeout: 504, private: 403, rate_limited: 429, invalid_match: 404, in_flight: 409, gc_error: 502,
+  bad_request: 400, conflict: 409,
+};
 
 class Service {
-  /** @param {{gc: import('./gc').DeadlockGC, cacheDir: string, replayUrl: Function, fetch?: typeof fetch}} deps */
+  /**
+   * @param {{gc: import('./gc').DeadlockGC, cacheDir: string, replayUrl: Function, fetch?: typeof fetch}} deps
+   */
   constructor({ gc, cacheDir, replayUrl, fetch: fetchFn = fetch }) {
     this.gc = gc;
     this.cacheDir = cacheDir;
@@ -48,10 +53,20 @@ class Service {
     return { status: 200, body: match };
   }
 
-  /** Route a GET path to a handler; errors from the GC become HTTP statuses. */
-  async handle(pathname) {
+  /** Route a request to a handler; errors from the GC become HTTP statuses. */
+  async handle(pathname, method = 'GET') {
     try {
       let m;
+      if (method === 'POST') {
+        if (pathname === '/friends/decline-all') return { status: 200, body: { declined: this.gc.declineAll() } };
+        if ((m = pathname.match(/^\/friends\/(\d{1,10})\/([a-z]+)$/))) {
+          await this.gc.friendAction(Number(m[1]), m[2]);
+          return { status: 200, body: this.gc.friends() };
+        }
+        return { status: 404, body: { error: 'not_found' } };
+      }
+      if (method !== 'GET') return { status: 405, body: { error: 'method_not_allowed' } };
+      if (pathname === '/friends') return { status: 200, body: this.gc.friends() };
       if (pathname === '/health') return this.health();
       if ((m = pathname.match(/^\/history\/(\d{1,10})$/))) return await this.history(Number(m[1]));
       if ((m = pathname.match(/^\/matches\/(\d{1,15})$/))) return await this.match(Number(m[1]));

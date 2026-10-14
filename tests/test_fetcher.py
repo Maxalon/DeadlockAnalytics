@@ -157,3 +157,17 @@ def test_client_unreachable():
 def test_client_history_returns_matches():
     f = client({"/history/5": (200, {"account_id": 5, "complete": True, "matches": [history_entry(1)]})})
     assert json.loads(json.dumps(f.history(5)))[0]["match_id"] == 1
+
+
+def test_client_friend_action_posts():
+    seen = {}
+
+    def handler(request):
+        seen["method"], seen["path"] = request.method, request.url.path
+        return httpx.Response(200, json={"logged_in": True, "incoming": [], "friends": [], "blocked": []})
+
+    f = Fetcher(
+        "http://fetcher", client=httpx.Client(base_url="http://fetcher", transport=httpx.MockTransport(handler))
+    )
+    f.friend_action(42, "block")
+    assert seen == {"method": "POST", "path": "/friends/42/block"}

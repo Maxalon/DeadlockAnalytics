@@ -13,13 +13,20 @@ const fixture = fs.readFileSync(path.join(__dirname, 'fixtures', '115701682.meta
 function service({ salts, download }) {
   const calls = { salts: 0, urls: [] };
   const gc = {
+    actions: [],
+    friends: () => ({ logged_in: true, incoming: [], friends: [], blocked: [] }),
+    async friendAction(id, action) {
+      if (action === 'nope') throw new GcError('bad_request', 'unknown action');
+      this.actions.push([id, action]);
+    },
+    declineAll: () => 3,
     status: () => ({ gc_ready: true }),
     matchSalts: async (id) => { calls.salts += 1; return salts(id); },
     fullHistory: async () => ({ matches: [{ match_id: '115701682', hero_id: 3 }], complete: true }),
   };
   const fetchFn = async (url) => { calls.urls.push(url); return download(url); };
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
-  return { svc: new Service({ gc, cacheDir, replayUrl: config.replayUrl, fetch: fetchFn }), calls };
+  return { svc: new Service({ gc, cacheDir, replayUrl: config.replayUrl, fetch: fetchFn }), calls, gc };
 }
 
 test('match: salts -> download from the replay cluster -> decoded, then cached', async () => {
@@ -50,4 +57,17 @@ test('history and routing', async () => {
   assert.deepStrictEqual(res.body.matches, [{ match_id: 115701682, hero_id: 3 }]);
   assert.strictEqual((await svc.handle('/nope')).status, 404);
   assert.strictEqual((await svc.handle('/history/abc')).status, 404);
+});
+
+test('friends routes', async () => {
+  const { svc, gc } = service({ salts: () => null, download: () => null });
+  assert.strictEqual((await svc.handle('/friends')).status, 200);
+  const res = await svc.handle('/friends/42/accept', 'POST');
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(gc.actions, [[42, 'accept']]);
+  assert.deepStrictEqual((await svc.handle('/friends/decline-all', 'POST')).body, { declined: 3 });
+  assert.strictEqual((await svc.handle('/friends/42/nope', 'POST')).status, 400);
+  assert.strictEqual((await svc.handle('/friends/42/accept')).status, 404); // GET
+  assert.strictEqual((await svc.handle('/history/1', 'POST')).status, 404);
+  assert.strictEqual((await svc.handle('/friends', 'DELETE')).status, 405);
 });

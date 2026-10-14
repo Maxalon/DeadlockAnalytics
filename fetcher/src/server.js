@@ -29,13 +29,13 @@ const token = readToken();
 if (!token) {
   log.error(`no Steam login yet: run \`docker compose run --rm -it fetcher npm run login\` first (${config.refreshTokenFile})`);
 }
-const gc = new DeadlockGC({ refreshToken: token, saveRefreshToken: saveToken, allowedFriends: config.friendAccountIds, log });
+const gc = new DeadlockGC({ refreshToken: token, saveRefreshToken: saveToken, log });
 const service = new Service({ gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl });
 if (token) gc.start();
 
 http.createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost');
-  const { status, body } = req.method === 'GET' ? await service.handle(pathname) : { status: 405, body: { error: 'method_not_allowed' } };
+  const { status, body } = await service.handle(pathname, req.method);
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
 }).listen(config.port, () => log.info(`fetcher listening on :${config.port}`));

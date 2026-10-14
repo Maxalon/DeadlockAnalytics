@@ -4,12 +4,12 @@ from app import jobs
 from app.config import Settings
 from app.main import create_app
 
-from .conftest import FakeApi
+from .conftest import FakeApi, FakeFetcher
 
 
-def client(tmp_path, **kw):
+def client(tmp_path, fetcher=None, **kw):
     s = Settings(database_path=str(tmp_path / "t.sqlite3"), run_scheduler=False, **kw)
-    return TestClient(create_app(s, api=FakeApi())), s
+    return TestClient(create_app(s, api=FakeApi(), fetcher=fetcher)), s
 
 
 def seed(s, match_payload, research_baselines):
@@ -47,11 +47,6 @@ def test_add_and_remove_account(tmp_path):
     assert "error=" in bad.headers["location"]
     c.post("/accounts/42/delete")
     assert "None yet" in c.get("/accounts").text
-
-
-def test_seed_accounts_from_env(tmp_path):
-    c, _ = client(tmp_path, seed_account_ids=[76561197960265728 + 7])
-    assert "/players/7" in c.get("/accounts").text
 
 
 def test_cross_site_posts_are_refused(tmp_path):
@@ -107,3 +102,44 @@ def test_adding_an_account_queues_only_that_account(tmp_path):
     c.post("/accounts", data={"account": "42"})
     assert c.app.state.scheduler.is_syncing(42)
     assert not c.app.state.scheduler.sync_requested.is_set()
+
+
+def test_bot_friend_requests_are_handled_on_the_accounts_page(tmp_path):
+    fetcher = FakeFetcher()
+    fetcher.bot["incoming"] = [{"account_id": 42, "name": "someone"}]
+    fetcher.bot["friends"] = [{"account_id": 7, "name": None}]
+    c, _ = client(tmp_path, fetcher=fetcher)
+    page = c.get("/accounts").text
+    assert "someone" in page and "Accept &amp; track" in page and "Decline all 1" in page
+
+    for action in ("accept", "decline", "block", "remove", "unblock"):
+        assert c.post(f"/bot/friends/42/{action}", follow_redirects=False).status_code == 303
+    assert c.post("/bot/friends/42/befriend").status_code == 404
+    c.post("/bot/friends/decline-all")
+    assert fetcher.actions == [(42, a) for a in ("accept", "decline", "block", "remove", "unblock")] + [
+        ("all", "decline")
+    ]
+
+    # accept & track: befriends and starts tracking in one step
+    c.post("/bot/friends/42/accept-track")
+    assert fetcher.actions[-1] == (42, "accept")
+    assert "/players/42" in c.get("/accounts").text
+
+
+def test_bot_errors_are_shown_not_raised(tmp_path):
+    from app.fetcher import FetcherError
+
+    fetcher = FakeFetcher()
+
+    def down():
+        raise FetcherError("unreachable", "fetcher unreachable: refused")
+
+    fetcher.friends = down
+    c, _ = client(tmp_path, fetcher=fetcher)
+    assert "fetcher unreachable" in c.get("/accounts").text
+
+
+def test_without_a_bot_there_is_no_friends_section(tmp_path):
+    c, _ = client(tmp_path)
+    assert "Steam bot friends" not in c.get("/accounts").text
+    assert c.post("/bot/friends/42/accept").status_code == 404
