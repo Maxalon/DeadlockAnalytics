@@ -1,64 +1,95 @@
 'use strict';
 // Measures Steam's rate limit on match metadata requests (the GC request every match file
-// download needs): how many requests in a row go through at a given pace, and how long Steam
-// then blocks. Talks to the running fetcher, like the CLI.
+// download needs). Each cycle: request as fast as the fetcher allows until Steam refuses, then
+// retry every few seconds until it accepts again. Over several cycles this shows
+//   - the quota (requests per cycle) and how long a block lasts,
+//   - what kind of limit it is: after an unblock, a sliding window lets the whole quota through
+//     again at once, a token bucket only one request at a time; a fixed window unblocks at round
+//     clock times,
+//   - with --alternate, whether sending target_account_id (as the game does) changes the quota.
+// Talks to the running fetcher, like the CLI. Stop the web app meanwhile: its syncs use the same quota.
 
-const RETRY_EVERY_S = 30;
 const MAX_BLOCKED_S = 2 * 3600;
 
 /**
  * @param {object} o
  * @param {(path: string) => Promise<{status: number, body: any}>} o.get  GET on the fetcher
  * @param {number} o.accountId  a tracked player whose history to take match ids from
- * @param {number} o.gapS  extra pause between requests (the fetcher itself waits >= 1.5 s)
- * @param {boolean} o.target  send target_account_id like the game does
+ * @param {number} [o.gapS]  extra pause between requests (the fetcher itself waits >= 1.5 s)
+ * @param {boolean} [o.target]  send target_account_id like the game does (first cycle)
+ * @param {boolean} [o.alternate]  flip `target` every cycle
+ * @param {number} [o.cycles]  burst-until-blocked + wait-until-unblocked rounds
+ * @param {number} [o.retryS]  how often to retry while blocked (the block end is measured to this)
  * @param {(line: string) => void} o.log
  * @param {(ms: number) => Promise<void>} [o.sleep]
  * @param {() => number} [o.now]
+ * @returns {Promise<object[]>} one summary per cycle
  */
-async function probe({ get, accountId, gapS, target, log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now }) {
+async function probe({
+  get, accountId, gapS = 0, target = false, alternate = false, cycles = 1, retryS = 30, log,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now,
+}) {
   const history = await get(`/history/${accountId}`);
   if (history.status !== 200) throw new Error(`history: ${history.status} ${JSON.stringify(history.body)}`);
   const ids = history.body.matches.map((m) => m.match_id).sort((a, b) => b - a);
-  const query = target ? `?account=${accountId}` : '';
-  const salts = (id) => get(`/salts/${id}${query}`);
-  const seconds = (t) => ((now() - t) / 1000).toFixed(1);
+  if (!ids.length) throw new Error('no matches in the history to probe with');
+  // Salts are never cached, so the same ids can be asked for again in later cycles.
+  let next = 0;
+  const nextId = () => ids[next++ % ids.length];
+  const iso = (t) => new Date(t).toISOString();
+  const seconds = (from, to = now()) => Number(((to - from) / 1000).toFixed(1));
 
-  log(`probing ${ids.length} matches of ${accountId}, ${gapS}s apart, target_account_id ${target ? 'sent' : 'not sent'}`);
-  const start = now();
-  let ok = 0;
-  let limitedId = null;
-  for (const id of ids) {
-    const resp = await salts(id);
-    if (resp.status === 429) {
-      limitedId = id;
+  log(`probing with ${ids.length} matches of ${accountId}: ${cycles} cycle(s), ${gapS}s between requests, retry every ${retryS}s while blocked`);
+  const results = [];
+  let sendTarget = target;
+  let pending = null; // a request that already went through while checking for the unblock
+  for (let cycle = 1; cycle <= cycles; cycle++) {
+    const query = sendTarget ? `?account=${accountId}` : '';
+    const salts = (id) => get(`/salts/${id}${query}`);
+    const start = pending ?? now();
+    let ok = pending === null ? 0 : 1;
+    pending = null;
+    let limited = null;
+    while (limited === null) {
+      const id = nextId();
+      const resp = await salts(id);
+      if (resp.status === 429) {
+        limited = { id, at: now() };
+        break;
+      }
+      if (resp.status !== 200) log(`  ${id}: ${resp.status} ${resp.body.error} (counted, not a rate limit)`);
+      ok += 1;
+      if (ok > 500) break; // no limit worth measuring
+      await sleep(gapS * 1000);
+    }
+    const summary = {
+      cycle, target: sendTarget, requests_ok: ok, burst_s: seconds(start, limited ? limited.at : now()),
+      started_at: iso(start), limited_at: limited ? iso(limited.at) : null, blocked_s: null, unblocked_at: null,
+    };
+    if (!limited) {
+      log(`cycle ${cycle}: no rate limit after ${ok} requests`);
+      results.push(summary);
+      log(JSON.stringify(summary));
       break;
     }
-    ok += 1;
-    log(`  #${ok} ${id} +${seconds(start)}s ${resp.status === 200 ? 'ok' : `${resp.status} ${resp.body.error}`}`);
-    await sleep(gapS * 1000);
-  }
-  const summary = { requests_ok: ok, seconds_until_limited: null, blocked_seconds: null, gap_s: gapS, target };
-  if (limitedId === null) {
-    log(`no rate limit after ${ok} requests in ${seconds(start)}s`);
-    return summary;
-  }
-  summary.seconds_until_limited = Number(seconds(start));
-  log(`rate limited after ${ok} requests in ${summary.seconds_until_limited}s; retrying every ${RETRY_EVERY_S}s`);
-
-  const limitedAt = now();
-  while ((now() - limitedAt) / 1000 < MAX_BLOCKED_S) {
-    await sleep(RETRY_EVERY_S * 1000);
-    const resp = await salts(limitedId);
-    if (resp.status !== 429) {
-      summary.blocked_seconds = Number(seconds(limitedAt));
-      log(`unblocked after ~${summary.blocked_seconds}s`);
-      return summary;
+    log(`cycle ${cycle}: ${ok} ok in ${summary.burst_s}s, limited at ${summary.limited_at}`);
+    while (seconds(limited.at) < MAX_BLOCKED_S) {
+      await sleep(retryS * 1000);
+      const resp = await salts(limited.id);
+      if (resp.status !== 429) {
+        summary.blocked_s = seconds(limited.at);
+        summary.unblocked_at = iso(now());
+        pending = now(); // this request counts toward the next cycle
+        break;
+      }
     }
-    log(`  still limited at +${seconds(limitedAt)}s`);
+    results.push(summary);
+    log(summary.blocked_s === null ? `still blocked after ${MAX_BLOCKED_S}s; stopping` : `unblocked after ${summary.blocked_s}s at ${summary.unblocked_at}`);
+    log(JSON.stringify(summary));
+    if (summary.blocked_s === null) break;
+    if (alternate) sendTarget = !sendTarget;
   }
-  log(`still limited after ${MAX_BLOCKED_S}s; giving up`);
-  return summary;
+  return results;
 }
 
 module.exports = { probe };

@@ -1,7 +1,8 @@
 'use strict';
 // Talks to the running fetcher (it holds the Steam session; a second login would kick it).
 //   docker compose exec fetcher node src/cli.js health | history <steamid3> | match <match_id>
-//   docker compose exec fetcher node src/cli.js probe <steamid3> [gap_seconds] [--target]
+//   docker compose exec fetcher node src/cli.js probe <steamid3> [gap_s] [--target] [--alternate]
+//                                                      [--cycles N] [--retry S]   (see src/probe.js)
 const config = require('./config');
 const { probe } = require('./probe');
 
@@ -15,14 +16,20 @@ async function get(path) {
 async function main() {
   const [cmd, arg, ...rest] = process.argv.slice(2);
   if (cmd === 'probe' && /^\d+$/.test(arg || '')) {
-    const gapS = Number(rest.find((a) => /^\d+(\.\d+)?$/.test(a)) ?? 0);
-    const summary = await probe({ get, accountId: Number(arg), gapS, target: rest.includes('--target'), log: console.log });
-    console.log(JSON.stringify(summary));
+    const opt = (name, fallback) => {
+      const i = rest.indexOf(`--${name}`);
+      return i >= 0 && /^\d+(\.\d+)?$/.test(rest[i + 1] || '') ? Number(rest[i + 1]) : fallback;
+    };
+    const gapS = /^\d+(\.\d+)?$/.test(rest[0] || '') ? Number(rest[0]) : 0;
+    await probe({
+      get, accountId: Number(arg), gapS, target: rest.includes('--target'), alternate: rest.includes('--alternate'),
+      cycles: opt('cycles', 1), retryS: opt('retry', 30), log: (line) => console.log(`${new Date().toISOString()} ${line}`),
+    });
     process.exit(0);
   }
   const paths = { health: '/health', history: `/history/${arg}`, match: `/matches/${arg}` };
   if (!paths[cmd] || (cmd !== 'health' && !/^\d+$/.test(arg || ''))) {
-    console.error('usage: node src/cli.js health | history <steamid3> | match <match_id> | probe <steamid3> [gap_s] [--target]');
+    console.error('usage: node src/cli.js health | history <steamid3> | match <match_id> | probe <steamid3> [gap_s] [--target] [--alternate] [--cycles N] [--retry S]');
     process.exit(2);
   }
   const resp = await fetch(base + paths[cmd]);
