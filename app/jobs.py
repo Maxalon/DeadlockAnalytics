@@ -62,9 +62,13 @@ def player_row(match_id: int, p: dict) -> dict:
 def store_match(conn: sqlite3.Connection, m: dict) -> None:
     conn.execute(
         """INSERT INTO matches
-             (match_id, start_time, duration_s, match_mode, game_mode, winning_team, average_badge, fetched_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(match_id) DO UPDATE SET fetched_at = excluded.fetched_at""",
+             (match_id, start_time, duration_s, match_mode, game_mode, winning_team, average_badge, fetched_at,
+              not_scored)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(match_id) DO UPDATE SET start_time = excluded.start_time, duration_s = excluded.duration_s,
+             match_mode = excluded.match_mode, game_mode = excluded.game_mode,
+             winning_team = excluded.winning_team, average_badge = excluded.average_badge,
+             fetched_at = excluded.fetched_at, not_scored = excluded.not_scored, detailed = 1""",
         (
             m["match_id"],
             _unix(m["start_time"]),
@@ -74,14 +78,68 @@ def store_match(conn: sqlite3.Connection, m: dict) -> None:
             _team(m["winning_team"]),
             m.get("average_badge"),
             int(time.time()),
+            None if m.get("not_scored") is None else int(m["not_scored"]),
         ),
     )
+    # Replaces history-only lines (negative slots) with the full match.
+    conn.execute("DELETE FROM match_players WHERE match_id = ?", (m["match_id"],))
     for p in m["players"]:
         row = player_row(m["match_id"], p)
         conn.execute(
             f"INSERT OR REPLACE INTO match_players ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
             tuple(row.values()),
         )
+
+
+NOT_SCORED_OUTCOME = 5  # EPlayerMatchOutcome k_EPlayerMatchOutcome_NotScored
+MATCH_MODES = {1: "Unranked", 4: "Ranked"}  # ECitadelMatchMode, as deadlock-api names them
+GAME_MODES = {1: "Normal"}
+
+
+def store_history_entry(conn: sqlite3.Connection, account_id: int, h: dict) -> bool:
+    """Store one line of a player's match history: their own K/D/A, net worth, hero, team and
+    the result, but no damage, healing or MVP rank and no other players. Enough for games
+    played and win rate right away; store_match replaces it once the match file is downloaded.
+    Returns whether anything new was stored."""
+    known = conn.execute("SELECT detailed FROM matches WHERE match_id = ?", (h["match_id"],)).fetchone()
+    if known and known[0]:
+        return False
+    if not known:
+        conn.execute(
+            """INSERT INTO matches
+                 (match_id, start_time, duration_s, match_mode, game_mode, winning_team, fetched_at, detailed,
+                  not_scored)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+            (
+                h["match_id"],
+                h["start_time"],
+                h["match_duration_s"],
+                MATCH_MODES.get(h["match_mode"], str(h["match_mode"])),
+                GAME_MODES.get(h["game_mode"], str(h["game_mode"])),
+                h["match_result"],  # the winning team (checked against deadlock-api)
+                int(time.time()),
+                int(h.get("player_match_outcome") == NOT_SCORED_OUTCOME) if h.get("player_match_outcome") else None,
+            ),
+        )
+    # The real slot is only in the match file; -account_id keeps lines of two tracked players
+    # in the same match apart until then.
+    cur = conn.execute(
+        """INSERT OR IGNORE INTO match_players
+             (match_id, player_slot, account_id, team, hero_id, kills, deaths, assists, net_worth)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            h["match_id"],
+            -account_id,
+            account_id,
+            h["player_team"],
+            h["hero_id"],
+            h["player_kills"],
+            h["player_deaths"],
+            h["player_assists"],
+            h["net_worth"],
+        ),
+    )
+    return cur.rowcount > 0
 
 
 def _record(conn, job: str, started: int, error: str | None) -> None:
@@ -127,43 +185,48 @@ def sync_account(
 
 
 def _sync_from_fetcher(conn: sqlite3.Connection, fetcher: Fetcher, account_id: int, settings: Settings) -> int:
-    """Read the full match history from Valve and download the matches not stored yet, newest
-    first. Steam limits how fast one account may fetch matches: on its rate limit the sync keeps
-    what it has, and the next sync continues where this one stopped."""
+    """Store the player's whole match history from Valve at once, then download the match files
+    still missing (all 12 players, damage, healing, MVP ranks), newest first. Steam limits how
+    fast one account may fetch match files: on its rate limit the sync stops there and the next
+    one continues. Returns matches newly stored."""
     started = int(time.time())
     fetcher.ensure_ready()
-    have = {r[0] for r in conn.execute("SELECT match_id FROM match_players WHERE account_id = ?", (account_id,))}
-    missing = sorted(
-        (
-            m["match_id"]
-            for m in fetcher.history(account_id)
-            if m["game_mode"] == NORMAL_GAME_MODE
-            and m["start_time"] >= settings.backfill_since
-            and m["match_id"] not in have
-        ),
-        reverse=True,
-    )
-    stored, pending = 0, 0
-    for i, match_id in enumerate(missing):
+    entries = [
+        h
+        for h in fetcher.history(account_id)
+        if h["game_mode"] == NORMAL_GAME_MODE and h["start_time"] >= settings.backfill_since
+    ]
+    with transaction(conn):
+        stored = sum(store_history_entry(conn, account_id, h) for h in entries)
+    undetailed = [
+        r[0]
+        for r in conn.execute(
+            """SELECT m.match_id FROM matches m JOIN match_players mp ON mp.match_id = m.match_id
+               WHERE mp.account_id = ? AND m.detailed = 0 ORDER BY m.match_id DESC""",
+            (account_id,),
+        )
+    ]
+    for match_id in undetailed:
         try:
-            match = fetcher.match(match_id)
+            match = fetcher.match(match_id, account_id)
         except FetcherError as exc:
             if exc.code == "rate_limited":
-                pending = len(missing) - i
-                log.info("Steam rate limit for %s: %s matches left for the next sync", account_id, pending)
+                log.info("Steam rate limit for %s; the next sync continues", account_id)
                 break
             if exc.code not in SKIPPABLE_MATCH_ERRORS:
                 raise
-            log.info("skipping match %s of %s: %s", match_id, account_id, exc)
+            log.info("no match file for %s of %s: %s", match_id, account_id, exc)
             continue
         with transaction(conn):
             store_match(conn, match)
-        stored += 1
     with transaction(conn):
         conn.execute(
             """UPDATE accounts SET last_synced_at = ?, last_full_sync_at = ?, last_error = NULL,
-                 last_source = 'Steam bot', pending_matches = ? WHERE account_id = ?""",
-            (started, started, pending or None, account_id),
+                 last_source = 'Steam bot', pending_matches = (
+                   SELECT NULLIF(COUNT(*), 0) FROM matches m JOIN match_players mp ON mp.match_id = m.match_id
+                   WHERE mp.account_id = ? AND m.detailed = 0)
+               WHERE account_id = ?""",
+            (started, started, account_id, account_id),
         )
     return stored
 

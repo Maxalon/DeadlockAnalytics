@@ -106,6 +106,19 @@ test('match salts', async () => {
   gc.stop();
 });
 
+test('match salts request names the account whose history it is from, like the game', async () => {
+  const seen = [];
+  const client = new FakeSteam({
+    onMetadata: (req) => { seen.push(req.target_account_id); return { result: 1, metadata_salt: 1, replay_group_id: 1 }; },
+  });
+  const gc = session(client);
+  gc.start();
+  await gc.matchSalts(1, 113956776);
+  await gc.matchSalts(1);
+  assert.deepStrictEqual(seen, [113956776, 0]);
+  gc.stop();
+});
+
 const R = SteamUser.EFriendRelationship;
 const id64 = (account) => SteamID.fromIndividualAccountID(account).getSteamID64();
 

@@ -34,8 +34,8 @@ const service = new Service({ gc, cacheDir: config.matchCacheDir, replayUrl: con
 if (token) gc.start();
 
 http.createServer(async (req, res) => {
-  const { pathname } = new URL(req.url, 'http://localhost');
-  const { status, body } = await service.handle(pathname, req.method);
+  const { pathname, searchParams } = new URL(req.url, 'http://localhost');
+  const { status, body } = await service.handle(pathname, req.method, searchParams);
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
 }).listen(config.port, () => log.info(`fetcher listening on :${config.port}`));

@@ -37,12 +37,12 @@ class Service {
     };
   }
 
-  async match(matchId) {
+  async match(matchId, targetAccountId = null) {
     // Finished matches never change, so a decoded match is cached forever.
     const cached = path.join(this.cacheDir, `${matchId}.json`);
     if (fs.existsSync(cached)) return { status: 200, body: JSON.parse(fs.readFileSync(cached, 'utf8')) };
 
-    const salts = await this.gc.matchSalts(matchId);
+    const salts = await this.gc.matchSalts(matchId, targetAccountId);
     const url = this.replayUrl(salts.cluster_id, matchId, salts.metadata_salt);
     const resp = await this.fetch(url);
     if (resp.status === 404) return { status: 404, body: { error: 'gone', message: `Valve no longer serves the files of match ${matchId}` } };
@@ -53,8 +53,14 @@ class Service {
     return { status: 200, body: match };
   }
 
+  /** Only the GC request for a match's salts, never cached: for measuring Steam's rate limit. */
+  async salts(matchId, targetAccountId = null) {
+    return { status: 200, body: await this.gc.matchSalts(matchId, targetAccountId) };
+  }
+
   /** Route a request to a handler; errors from the GC become HTTP statuses. */
-  async handle(pathname, method = 'GET') {
+  async handle(pathname, method = 'GET', query = new URLSearchParams()) {
+    const account = /^\d{1,10}$/.test(query.get('account') || '') ? Number(query.get('account')) : null;
     try {
       let m;
       if (method === 'POST') {
@@ -69,7 +75,8 @@ class Service {
       if (pathname === '/friends') return { status: 200, body: this.gc.friends() };
       if (pathname === '/health') return this.health();
       if ((m = pathname.match(/^\/history\/(\d{1,10})$/))) return await this.history(Number(m[1]));
-      if ((m = pathname.match(/^\/matches\/(\d{1,15})$/))) return await this.match(Number(m[1]));
+      if ((m = pathname.match(/^\/matches\/(\d{1,15})$/))) return await this.match(Number(m[1]), account);
+      if ((m = pathname.match(/^\/salts\/(\d{1,15})$/))) return await this.salts(Number(m[1]), account);
       return { status: 404, body: { error: 'not_found' } };
     } catch (err) {
       const status = STATUS[err.code] || 500;

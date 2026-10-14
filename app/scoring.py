@@ -34,22 +34,24 @@ LABELS = {
 }
 
 
-def stat_value(player, stat: str) -> float:
+def stat_value(player, stat: str) -> float | None:
+    """None when the stat isn't known yet (a match stored from the history only)."""
     columns, _ = STATS[stat]
-    return float(sum(player[c] for c in columns))
+    values = [player[c] for c in columns]
+    return None if any(v is None for v in values) else float(sum(values))
 
 
 @dataclass
 class Component:
     stat: str
-    value: float
+    value: float | None
     mean: float | None
     sd: float | None
     weight: float
 
     @property
     def z(self) -> float | None:
-        if self.mean is None or not self.sd:
+        if self.value is None or self.mean is None or not self.sd:
             return None
         return (self.value - self.mean) / self.sd
 

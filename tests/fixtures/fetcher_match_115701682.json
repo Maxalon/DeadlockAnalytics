@@ -6,6 +6,7 @@
  "match_mode": "Unranked",
  "game_mode": "Normal",
  "average_badge": null,
+ "not_scored": false,
  "players": [
   {
    "account_id": 79553708,

@@ -39,8 +39,10 @@ class Fetcher:
     def history(self, account_id: int) -> list[dict]:
         return self._request("GET", f"/history/{account_id}")["matches"]
 
-    def match(self, match_id: int) -> dict:
-        return self._request("GET", f"/matches/{match_id}")
+    def match(self, match_id: int, account_id: int | None = None) -> dict:
+        """account_id: whose history the match is from; the game sends it with the request too."""
+        params = {"account": account_id} if account_id else None
+        return self._request("GET", f"/matches/{match_id}", params=params)
 
     def friends(self) -> dict:
         """The bot's open friend requests, friends and blocked accounts. Short timeout: a page waits on it."""

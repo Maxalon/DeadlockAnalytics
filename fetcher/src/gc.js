@@ -242,11 +242,14 @@ class DeadlockGC extends EventEmitter {
     return { matches, complete: false };
   }
 
-  /** The salts needed to download a match's files from Valve's replay servers. */
-  async matchSalts(matchId) {
-    const resp = await this._request(
-      MSG.METADATA, proto.GetMatchMetaData, { match_id: matchId }, proto.GetMatchMetaDataResponse,
-    );
+  /**
+   * The salts needed to download a match's files from Valve's replay servers. Like the game,
+   * pass the account whose history the match is from.
+   */
+  async matchSalts(matchId, targetAccountId = null) {
+    const body = { match_id: matchId };
+    if (targetAccountId) body.target_account_id = targetAccountId;
+    const resp = await this._request(MSG.METADATA, proto.GetMatchMetaData, body, proto.GetMatchMetaDataResponse);
     if (resp.result === 1 && resp.metadata_salt) {
       return { cluster_id: resp.replay_group_id, metadata_salt: resp.metadata_salt, replay_salt: resp.replay_salt };
     }

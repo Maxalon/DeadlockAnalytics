@@ -7,6 +7,13 @@
   <p class="muted">{{ match.start_time|dt }} · {{ match.match_mode }} · {{ match.duration_s|mins }}</p>
 </section>
 
+{% if not match.detailed %}
+<p>Only the tracked player's line from their match history is stored so far: Steam limits how fast the bot may download match files. All players, damage, healing, MVP ranks and scores follow with one of the next syncs.</p>
+{% for p in players %}
+<p>{{ hero(heroes, p.hero_id) }} · {{ "Win" if p.team == match.winning_team else "Loss" }} · {{ p.kills }} / {{ p.deaths }} / {{ p.assists }} · {{ p.net_worth|num }} souls{% if p.account_id in tracked %} · <a href="/players/{{ p.account_id }}">profile</a>{% endif %}</p>
+{% endfor %}
+{% else %}
+{% if match.not_scored %}<p class="muted">Not scored: played out, but it doesn't count (e.g. someone left early).</p>{% endif %}
 {% for team in (match.winning_team, 1 - match.winning_team) %}
 <section>
   <h2>{{ "Winning team" if team == match.winning_team else "Losing team" }}</h2>
@@ -32,6 +39,7 @@
   </div>
 </section>
 {% endfor %}
+{% endif %}
 
 <p class="muted small">
   Each cell: raw value, and below it the weighted hero-relative z-score it adds to the score (hover for the hero mean and SD).

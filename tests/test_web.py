@@ -143,3 +143,61 @@ def test_without_a_bot_there_is_no_friends_section(tmp_path):
     c, _ = client(tmp_path)
     assert "Steam bot friends" not in c.get("/accounts").text
     assert c.post("/bot/friends/42/accept").status_code == 404
+
+
+def test_pages_render_with_history_only_matches(tmp_path, research_baselines):
+    from app import db
+
+    from .conftest import insert_snapshot
+    from .test_fetcher import history_entry
+
+    c, s = client(tmp_path)
+    conn = db.connect(s.database_path)
+    with db.transaction(conn):
+        conn.execute(
+            "INSERT INTO accounts (account_id, added_at, pending_matches, last_synced_at, last_full_sync_at)"
+            " VALUES (113956776, 0, 2, 4000000000, 4000000000)"  # synced "now": the page doesn't re-pull
+        )
+        jobs.store_history_entry(conn, 113956776, history_entry(115701682))
+        jobs.store_history_entry(conn, 113956776, {**history_entry(115701683), "player_match_outcome": 5})
+    insert_snapshot(conn, research_baselines)
+    conn.close()
+    for url in ("/", "/accounts", "/players/113956776", "/matches/115701682"):
+        assert c.get(url).status_code == 200, url
+    player = c.get("/players/113956776").text
+    assert "details for 2 matches still to come" in player and "not scored" in player
+    assert "Only the tracked player" in c.get("/matches/115701682").text
+
+
+def test_old_database_is_migrated_without_losing_matches(tmp_path, match_payload):
+    import sqlite3
+
+    from app import db
+
+    path = str(tmp_path / "old.sqlite3")
+    old = sqlite3.connect(path)
+    old.executescript(
+        """CREATE TABLE matches (match_id INTEGER PRIMARY KEY, start_time INTEGER NOT NULL,
+             duration_s INTEGER NOT NULL, match_mode TEXT NOT NULL, game_mode TEXT NOT NULL,
+             winning_team INTEGER NOT NULL, average_badge INTEGER, fetched_at INTEGER NOT NULL);
+           CREATE TABLE match_players (match_id INTEGER NOT NULL REFERENCES matches(match_id) ON DELETE CASCADE,
+             player_slot INTEGER NOT NULL, account_id INTEGER NOT NULL, team INTEGER NOT NULL,
+             hero_id INTEGER NOT NULL, kills INTEGER NOT NULL, deaths INTEGER NOT NULL, assists INTEGER NOT NULL,
+             net_worth INTEGER NOT NULL, player_damage INTEGER NOT NULL, objective_damage INTEGER NOT NULL,
+             ally_healing INTEGER NOT NULL, mvp_rank INTEGER, abandon_time_s INTEGER NOT NULL DEFAULT 0,
+             PRIMARY KEY (match_id, player_slot));
+           CREATE INDEX match_players_account ON match_players(account_id, match_id);
+           INSERT INTO matches VALUES (1, 0, 60, 'Unranked', 'Normal', 1, NULL, 0);
+           INSERT INTO match_players VALUES (1, 3, 113956776, 1, 3, 1, 2, 3, 4000, 500, 60, 7, 1, 0);"""
+    )
+    old.close()
+    conn = db.connect(path)
+    db.init(conn)
+    row = conn.execute("SELECT * FROM match_players").fetchone()
+    assert (row["player_slot"], row["player_damage"], row["mvp_rank"]) == (3, 500, 1)
+    assert tuple(conn.execute("SELECT detailed, not_scored FROM matches").fetchone()) == (1, None)
+    nullable = {r["name"]: not r["notnull"] for r in conn.execute("PRAGMA table_info(match_players)")}
+    assert nullable["player_damage"] and nullable["ally_healing"]
+    indexes = [r["name"] for r in conn.execute("PRAGMA index_list(match_players)")]
+    assert "match_players_account" in indexes
+    db.init(conn)  # idempotent

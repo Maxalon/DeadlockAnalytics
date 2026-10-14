@@ -16,8 +16,34 @@ def settings():
     return Settings(database_path=":memory:", run_scheduler=False)
 
 
-def history_entry(match_id, start_time=1791848958, game_mode=1):
-    return {"match_id": match_id, "start_time": start_time, "game_mode": game_mode, "match_mode": 1}
+# The 115701682 line of the tracked player's real match history, as the fetcher returns it.
+REAL_ENTRY = {
+    "match_id": 115701682,
+    "hero_id": 3,
+    "match_duration_s": 1613,
+    "start_time": 1791848958,
+    "match_result": 1,
+    "player_team": 1,
+    "player_kills": 12,
+    "player_deaths": 2,
+    "player_assists": 21,
+    "last_hits": 128,
+    "denies": 1,
+    "hero_level": 31,
+    "net_worth": 35006,
+    "match_mode": 1,
+    "game_mode": 1,
+}
+
+
+def history_entry(match_id, start_time=1791848958, game_mode=1, won=True):
+    return {
+        **REAL_ENTRY,
+        "match_id": match_id,
+        "start_time": start_time,
+        "game_mode": game_mode,
+        "match_result": 1 if won else 0,
+    }
 
 
 def track(conn):
@@ -36,13 +62,13 @@ def test_fetcher_match_stores_the_same_rows_as_deadlock_api(conn, fetcher_match,
     assert queries.match_players(conn, 115701682) == via_api
 
 
-def test_sync_through_bot_downloads_only_new_normal_matches(conn, fetcher_match):
+def test_history_is_stored_at_once_then_enriched_newest_first(conn, fetcher_match):
     track(conn)
     other = {**fetcher_match, "match_id": 115700000}
     fetcher = FakeFetcher(
         history=[
             history_entry(115701682),
-            history_entry(115700000),
+            history_entry(115700000, won=False),
             history_entry(115600000, game_mode=4),  # street brawl: not scored
             history_entry(100, start_time=1_700_000_000),  # before the backfill date
         ],
@@ -51,45 +77,73 @@ def test_sync_through_bot_downloads_only_new_normal_matches(conn, fetcher_match)
     api = FakeApi()
     assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 2
     assert fetcher.fetched == [115701682, 115700000] and api.calls == []  # newest first
-    account = conn.execute("SELECT * FROM accounts").fetchone()
-    assert account["last_source"] == "Steam bot" and account["last_error"] is None
+    assert conn.execute("SELECT COUNT(*) FROM matches WHERE detailed = 1").fetchone()[0] == 2
+    row = conn.execute("SELECT * FROM accounts").fetchone()
+    assert row["last_source"] == "Steam bot" and row["last_error"] is None and row["pending_matches"] is None
 
-    # already stored matches aren't downloaded again
+    # nothing new: no downloads
     assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 0
     assert fetcher.fetched == [115701682, 115700000]
 
 
-def test_unfinished_match_is_skipped_until_next_sync(conn, fetcher_match):
-    track(conn)
-    fetcher = FakeFetcher(
-        history=[history_entry(115701682), history_entry(115800000)],
-        matches={115701682: fetcher_match},
-        errors={115800000: FetcherError("in_flight", "still being processed")},
-    )
-    assert jobs.sync_account(conn, FakeApi(), ME, settings(), fetcher=fetcher) == 1
-    assert conn.execute("SELECT last_error FROM accounts").fetchone()[0] is None
+def test_rate_limited_matches_count_right_away_and_are_enriched_later(conn, fetcher_match):
+    from app import queries
 
-
-def test_rate_limit_keeps_progress_and_the_next_sync_continues(conn, fetcher_match):
     track(conn)
-    newer = {**fetcher_match, "match_id": 115800000}
     limited = FetcherError("rate_limited", "Steam rate-limited match metadata requests")
     fetcher = FakeFetcher(
-        history=[history_entry(115800000), history_entry(115701682), history_entry(115600000)],
-        matches={115800000: newer, 115701682: fetcher_match},
+        history=[history_entry(115701682), history_entry(115600000, won=False), history_entry(115500000)],
         errors={115701682: limited},
     )
-    api = FakeApi()
-    assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 1
-    account = conn.execute("SELECT * FROM accounts").fetchone()
-    assert account["pending_matches"] == 2 and account["last_error"] is None
-    assert account["last_source"] == "Steam bot" and api.calls == []  # no deadlock-api fallback
+    assert jobs.sync_account(conn, FakeApi(), ME, settings(), fetcher=fetcher) == 3
+    assert fetcher.fetched == [115701682]  # stopped at the first rate limit
 
+    # games and wins are right before any match file arrived (win = player_team == match_result)
+    me = queries.accounts(conn)[0]
+    assert (me["games"], me["wins"], me["pending_matches"]) == (3, 2, 3)
+    assert me["last_error"] is None
+    line = conn.execute("SELECT * FROM match_players WHERE match_id = 115701682").fetchone()
+    assert (line["kills"], line["deaths"], line["assists"], line["net_worth"]) == (12, 2, 21, 35006)
+    assert line["player_damage"] is None and line["player_slot"] == -ME
+
+    # next sync: the match file replaces the history line with all 12 players
     del fetcher.errors[115701682]
-    fetcher.matches[115600000] = {**fetcher_match, "match_id": 115600000}
-    assert jobs.sync_account(conn, api, ME, settings(), fetcher=fetcher) == 2
-    assert fetcher.fetched[-2:] == [115701682, 115600000]  # only the ones still missing
-    assert conn.execute("SELECT pending_matches FROM accounts").fetchone()[0] is None
+    fetcher.matches[115701682] = fetcher_match
+    fetcher.errors[115600000] = limited
+    assert jobs.sync_account(conn, FakeApi(), ME, settings(), fetcher=fetcher) == 0
+    assert conn.execute("SELECT COUNT(*) FROM match_players WHERE match_id = 115701682").fetchone()[0] == 12
+    me = queries.accounts(conn)[0]
+    assert (me["games"], me["wins"], me["pending_matches"]) == (3, 2, 2)
+
+
+def test_unavailable_match_file_keeps_the_history_line(conn):
+    track(conn)
+    fetcher = FakeFetcher(
+        history=[history_entry(115800000)], errors={115800000: FetcherError("in_flight", "still being processed")}
+    )
+    assert jobs.sync_account(conn, FakeApi(), ME, settings(), fetcher=fetcher) == 1
+    row = conn.execute("SELECT * FROM accounts").fetchone()
+    assert row["last_error"] is None and row["pending_matches"] == 1
+
+
+def test_two_tracked_players_in_one_history_only_match(conn):
+    from app.db import transaction
+
+    track(conn)
+    with transaction(conn):
+        assert jobs.store_history_entry(conn, ME, history_entry(1))
+        assert jobs.store_history_entry(conn, 7, {**history_entry(1), "player_team": 0})
+        assert not jobs.store_history_entry(conn, 7, history_entry(1))  # already there
+    assert conn.execute("SELECT COUNT(*) FROM match_players WHERE match_id = 1").fetchone()[0] == 2
+
+
+def test_history_line_never_overwrites_a_full_match(conn, fetcher_match):
+    from app.db import transaction
+
+    with transaction(conn):
+        jobs.store_match(conn, fetcher_match)
+        assert not jobs.store_history_entry(conn, ME, history_entry(115701682))
+    assert conn.execute("SELECT COUNT(*) FROM match_players").fetchone()[0] == 12
 
 
 def test_rate_limit_on_history_waits_for_the_next_sync(conn):
@@ -171,3 +225,28 @@ def test_client_friend_action_posts():
     )
     f.friend_action(42, "block")
     assert seen == {"method": "POST", "path": "/friends/42/block"}
+
+
+def test_not_scored_matches_are_kept_out_of_games_and_win_rate(conn, fetcher_match):
+    from app import queries
+
+    track(conn)
+    fetcher = FakeFetcher(
+        history=[
+            history_entry(3, won=True),
+            {**history_entry(2, won=True), "player_match_outcome": 5},  # someone left: not scored
+            history_entry(1, won=False),
+        ],
+        errors={i: FetcherError("rate_limited", "slow down") for i in (1, 2, 3)},
+    )
+    jobs.sync_account(conn, FakeApi(), ME, settings(), fetcher=fetcher)
+    me = queries.accounts(conn)[0]
+    assert (me["games"], me["wins"], me["not_scored"]) == (2, 1, 1)
+    assert [h["games"] for h in queries.hero_summary(conn, ME)] == [2]
+
+    # the match file's flag wins once it's downloaded
+    from app.db import transaction
+
+    with transaction(conn):
+        jobs.store_match(conn, {**fetcher_match, "match_id": 2, "not_scored": False})
+    assert queries.accounts(conn)[0]["not_scored"] == 0
