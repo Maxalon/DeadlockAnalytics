@@ -46,3 +46,52 @@ jobs:
             ghcr.io/maxalon/deadlockanalytics:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    # Runs on GitHub's runners: joins the tailnet as an ephemeral tag:ci node, then SSHes to
+    # the box as `deploy`, whose key can only run deploy/remote-deploy.sh (forced command).
+    # Secrets live in the `production` environment, which only main may use.
+    # Until they are configured this job skips itself instead of failing.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: image
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Check deploy configuration
+        id: cfg
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        run: |
+          if [ -z "$TS_OAUTH_CLIENT_ID" ] || [ -z "$DEPLOY_HOST" ]; then
+            echo "::notice::Deploy secrets/variables not set in the production environment; skipping (see README)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Join tailnet
+        if: steps.cfg.outputs.enabled == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.DEPLOY_HOST }}
+      - name: Deploy over SSH
+        if: steps.cfg.outputs.enabled == 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            -o ConnectTimeout=20 "deploy@${DEPLOY_HOST}"
