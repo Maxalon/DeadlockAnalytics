@@ -51,7 +51,7 @@ test('sliding window: every cycle gets the full quota, the block is measured to 
   const cycles = await run(f, { cycles: 3, retryS: 5 });
   assert.deepStrictEqual(cycles.map((c) => c.requests_ok), [4, 4, 4]);
   for (const c of cycles) assert.ok(c.blocked_s >= 90 && c.blocked_s <= 100, `${c.blocked_s}`);
-  assert.strictEqual(f.paths[1], '/salts/3'); // newest first
+  assert.strictEqual(f.paths[1], '/salts/3?force=1'); // newest first, past the fetcher's own pause
 });
 
 test('token bucket: after the first block only one request per refill gets through', async () => {
@@ -65,7 +65,7 @@ test('alternate flips target_account_id every cycle', async () => {
   const f = fakeFetcher(slidingWindow(2, 20_000));
   const cycles = await run(f, { cycles: 3, retryS: 5, target: true, alternate: true });
   assert.deepStrictEqual(cycles.map((c) => c.target), [true, false, true]);
-  assert.ok(f.paths.includes('/salts/3?account=7') && f.paths.includes('/salts/2'));
+  assert.ok(f.paths.includes('/salts/3?force=1&account=7') && f.paths.includes('/salts/2?force=1'));
 });
 
 test('no limit: stops instead of hammering forever', async () => {
@@ -73,4 +73,12 @@ test('no limit: stops instead of hammering forever', async () => {
   const [c] = await run(f, { cycles: 2 });
   assert.strictEqual(c.limited_at, null);
   assert.ok(c.requests_ok > 500);
+});
+
+test('stops when the bot is offline instead of mistaking it for an unblock', async () => {
+  let calls = 0;
+  const f = fakeFetcher(() => false);
+  const get = f.get;
+  f.get = async (path) => (path.startsWith('/salts/') && ++calls > 2 ? { status: 503, body: { error: 'not_ready' } } : get(path));
+  await assert.rejects(run(f, { cycles: 2, retryS: 5 }), /503/);
 });

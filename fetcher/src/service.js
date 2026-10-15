@@ -54,8 +54,8 @@ class Service {
   }
 
   /** Only the GC request for a match's salts, never cached: for measuring Steam's rate limit. */
-  async salts(matchId, targetAccountId = null) {
-    return { status: 200, body: await this.gc.matchSalts(matchId, targetAccountId) };
+  async salts(matchId, targetAccountId = null, force = false) {
+    return { status: 200, body: await this.gc.matchSalts(matchId, targetAccountId, { force }) };
   }
 
   /** Route a request to a handler; errors from the GC become HTTP statuses. */
@@ -76,7 +76,7 @@ class Service {
       if (pathname === '/health') return this.health();
       if ((m = pathname.match(/^\/history\/(\d{1,10})$/))) return await this.history(Number(m[1]));
       if ((m = pathname.match(/^\/matches\/(\d{1,15})$/))) return await this.match(Number(m[1]), account);
-      if ((m = pathname.match(/^\/salts\/(\d{1,15})$/))) return await this.salts(Number(m[1]), account);
+      if ((m = pathname.match(/^\/salts\/(\d{1,15})$/))) return await this.salts(Number(m[1]), account, query.get('force') === '1');
       return { status: 404, body: { error: 'not_found' } };
     } catch (err) {
       const status = STATUS[err.code] || 500;

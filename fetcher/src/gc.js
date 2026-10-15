@@ -19,6 +19,16 @@ const MIN_REQUEST_GAP_MS = 1500;
 const MAX_HISTORY_PAGES = 100;
 // What the game client sends (see proto/deadlock.proto).
 const HELLO = { client_session_need: 104, client_launcher: 0, engine: 1 };
+// After Steam rate-limits match metadata, don't ask again before this; doubled each time the
+// first request after a pause is refused too. Refused requests may count against the limit,
+// so retrying sooner can keep the block going.
+const METADATA_PAUSE_MS = 35 * 60 * 1000;
+const MAX_METADATA_PAUSE_MS = 4 * 3600 * 1000;
+// Thrown out because the account logged on (or started a game) elsewhere: log back on after
+// this, doubled while it keeps happening.
+const RELOGIN_DELAY_MS = 10 * 60 * 1000;
+const MAX_RELOGIN_DELAY_MS = 2 * 3600 * 1000;
+const KICKED = [SteamUser.EResult.LoggedInElsewhere, SteamUser.EResult.LogonSessionReplaced];
 
 class GcError extends Error {
   constructor(code, message) {
@@ -34,8 +44,10 @@ class DeadlockGC extends EventEmitter {
    * @param {SteamUser} [opts.client] injectable for tests
    * @param {string} opts.refreshToken from `npm run login`
    * @param {(token: string) => void} opts.saveRefreshToken called when Steam renews the token
+   * @param {() => number} [opts.now] injectable clock for tests
+   * @param {number} [opts.reloginDelayMs] first wait before logging back on after being kicked
    */
-  constructor({ client, refreshToken, saveRefreshToken, log = console }) {
+  constructor({ client, refreshToken, saveRefreshToken, log = console, now = Date.now, reloginDelayMs = RELOGIN_DELAY_MS }) {
     super();
     this.client = client || new SteamUser({ renewRefreshTokens: true, autoRelogin: true });
     this.refreshToken = refreshToken;
@@ -47,6 +59,13 @@ class DeadlockGC extends EventEmitter {
     this._helloTimer = null;
     this._queue = Promise.resolve();
     this._lastRequestAt = 0;
+    this.now = now;
+    this.playingElsewhere = false;
+    this._metadataPausedUntil = 0;
+    this._metadataPause = METADATA_PAUSE_MS;
+    this._reloginDelay = reloginDelayMs;
+    this._firstReloginDelay = reloginDelayMs;
+    this._reloginTimer = null;
     this._wire();
   }
 
@@ -56,6 +75,7 @@ class DeadlockGC extends EventEmitter {
 
   stop() {
     clearInterval(this._helloTimer);
+    clearTimeout(this._reloginTimer);
     this.client.logOff();
   }
 
@@ -64,6 +84,8 @@ class DeadlockGC extends EventEmitter {
       logged_in: this.loggedIn,
       gc_ready: this.ready,
       account_id: this.client.steamID ? this.client.steamID.accountid : null,
+      playing_elsewhere: this.playingElsewhere,
+      metadata_paused_until: this._metadataPausedUntil > this.now() ? new Date(this._metadataPausedUntil).toISOString() : null,
       last_error: this.lastError,
     };
   }
@@ -73,6 +95,7 @@ class DeadlockGC extends EventEmitter {
     c.on('loggedOn', () => {
       this.loggedIn = true;
       this.lastError = null;
+      this._reloginDelay = this._firstReloginDelay;
       this.log.info(`steam: logged on as ${c.steamID && c.steamID.accountid}`);
       c.setPersona(SteamUser.EPersonaState.Online);
       c.gamesPlayed([APP_ID]);
@@ -90,15 +113,41 @@ class DeadlockGC extends EventEmitter {
         this.emit('ready');
       }
     });
+    // Someone plays a game on the bot account elsewhere (e.g. its Steam client on a PC): that
+    // ends our GC session. Never kick them; take Deadlock back once they've stopped.
+    c.on('playingState', (blocked, playingApp) => {
+      if (blocked && !this.playingElsewhere) {
+        this.playingElsewhere = true;
+        this._notReady();
+        this.lastError = `the bot account is playing app ${playingApp} on another device; paused until that ends`;
+        this.log.warn(`steam: ${this.lastError}`);
+      } else if (!blocked && this.playingElsewhere) {
+        this.playingElsewhere = false;
+        this.lastError = null;
+        this.log.info('steam: the other session stopped playing; resuming');
+        c.gamesPlayed([APP_ID]);
+        this._startHello();
+      }
+    });
     c.on('disconnected', (eresult, msg) => {
       this.loggedIn = false;
       this._notReady();
       this.log.warn(`steam: disconnected (${msg || eresult}); steam-user reconnects`);
     });
     c.on('error', (err) => {
-      // Fatal for this login (e.g. the refresh token was revoked): needs `npm run login` again.
       this.loggedIn = false;
       this._notReady();
+      if (KICKED.includes(err.eresult)) {
+        // The account logged on elsewhere. Come back later instead of fighting over it.
+        const delay = this._reloginDelay;
+        this._reloginDelay = Math.min(delay * 2, MAX_RELOGIN_DELAY_MS);
+        this.lastError = `logged on elsewhere (${err.message}); logging back on in ${Math.round(delay / 60000)} min`;
+        this.log.warn(`steam: ${this.lastError}`);
+        clearTimeout(this._reloginTimer);
+        this._reloginTimer = setTimeout(() => this.start(), delay);
+        return;
+      }
+      // Fatal for this login (e.g. the refresh token was revoked): needs `npm run login` again.
       this.lastError = err.message;
       this.log.error(`steam: ${err.message}`);
     });
@@ -246,14 +295,23 @@ class DeadlockGC extends EventEmitter {
    * The salts needed to download a match's files from Valve's replay servers. Like the game,
    * pass the account whose history the match is from.
    */
-  async matchSalts(matchId, targetAccountId = null) {
+  async matchSalts(matchId, targetAccountId = null, { force = false } = {}) {
+    // `force` (the probe only): ask Steam even during a pause, to measure the block.
+    if (!force && this.now() < this._metadataPausedUntil) {
+      throw new GcError('rate_limited', `paused after a Steam rate limit until ${new Date(this._metadataPausedUntil).toISOString()}`);
+    }
     const body = { match_id: matchId };
     if (targetAccountId) body.target_account_id = targetAccountId;
     const resp = await this._request(MSG.METADATA, proto.GetMatchMetaData, body, proto.GetMatchMetaDataResponse);
+    if (resp.result === 5) {
+      this._metadataPausedUntil = this.now() + this._metadataPause;
+      this._metadataPause = Math.min(this._metadataPause * 2, MAX_METADATA_PAUSE_MS);
+      throw new GcError('rate_limited', `Steam rate-limited match metadata requests; paused until ${new Date(this._metadataPausedUntil).toISOString()}`);
+    }
+    this._metadataPause = METADATA_PAUSE_MS; // Steam answered: the next limit starts with a short pause again
     if (resp.result === 1 && resp.metadata_salt) {
       return { cluster_id: resp.replay_group_id, metadata_salt: resp.metadata_salt, replay_salt: resp.replay_salt };
     }
-    if (resp.result === 5) throw new GcError('rate_limited', 'Steam rate-limited match metadata requests');
     if (resp.result === 6) throw new GcError('invalid_match', `match ${matchId} is unknown to Valve`);
     if (resp.result === 7) throw new GcError('in_flight', `match ${matchId} is still being processed`);
     throw new GcError('gc_error', `match metadata result ${resp.result}${resp.result === 1 ? ' without salt' : ''}`);
