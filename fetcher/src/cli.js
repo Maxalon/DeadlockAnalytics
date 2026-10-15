@@ -2,7 +2,7 @@
 // Talks to the running fetcher (it holds the Steam session; a second login would kick it).
 //   docker compose exec fetcher node src/cli.js health | history <steamid3> | match <match_id>
 //   docker compose exec fetcher node src/cli.js probe <steamid3> [gap_s] [--target] [--alternate]
-//                                                      [--cycles N] [--retry S]   (see src/probe.js)
+//                                                      [--cycles N] [--retry S, default 300]   (see src/probe.js)
 const config = require('./config');
 const { probe } = require('./probe');
 
@@ -48,6 +48,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(`fetcher not reachable: ${err.message}`);
+  console.error(err.message);
   process.exit(1);
 });

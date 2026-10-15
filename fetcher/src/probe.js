@@ -8,8 +8,14 @@
 //     clock times,
 //   - with --alternate, whether sending target_account_id (as the game does) changes the quota.
 // Talks to the running fetcher, like the CLI. Stop the web app meanwhile: its syncs use the same quota.
+// The probe asks Steam even while the fetcher pauses after a rate limit (force=1), so keep the
+// retry interval generous: refused requests may count against the limit and prolong the block.
 
-const MAX_BLOCKED_S = 2 * 3600;
+const MAX_BLOCKED_S = 6 * 3600;
+// GC answers that aren't about the rate limit (match unknown or still being processed): the
+// request went through, so it counts. Anything else (bot offline, timeout) makes the
+// measurement meaningless, so the probe stops.
+const COUNTED = new Set([200, 404, 409]);
 
 /**
  * @param {object} o
@@ -26,7 +32,7 @@ const MAX_BLOCKED_S = 2 * 3600;
  * @returns {Promise<object[]>} one summary per cycle
  */
 async function probe({
-  get, accountId, gapS = 0, target = false, alternate = false, cycles = 1, retryS = 30, log,
+  get, accountId, gapS = 0, target = false, alternate = false, cycles = 1, retryS = 300, log,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now,
 }) {
   const history = await get(`/history/${accountId}`);
@@ -44,8 +50,14 @@ async function probe({
   let sendTarget = target;
   let pending = null; // a request that already went through while checking for the unblock
   for (let cycle = 1; cycle <= cycles; cycle++) {
-    const query = sendTarget ? `?account=${accountId}` : '';
-    const salts = (id) => get(`/salts/${id}${query}`);
+    const query = sendTarget ? `?force=1&account=${accountId}` : '?force=1';
+    const salts = async (id) => {
+      const resp = await get(`/salts/${id}${query}`);
+      if (resp.status !== 429 && !COUNTED.has(resp.status)) {
+        throw new Error(`fetcher answered ${resp.status} ${JSON.stringify(resp.body)}; stopping, the measurement would be wrong`);
+      }
+      return resp;
+    };
     const start = pending ?? now();
     let ok = pending === null ? 0 : 1;
     pending = null;
@@ -57,7 +69,7 @@ async function probe({
         limited = { id, at: now() };
         break;
       }
-      if (resp.status !== 200) log(`  ${id}: ${resp.status} ${resp.body.error} (counted, not a rate limit)`);
+      if (resp.status !== 200) log(`  ${id}: ${resp.status} ${resp.body.error} (a GC answer, counted)`);
       ok += 1;
       if (ok > 500) break; // no limit worth measuring
       await sleep(gapS * 1000);

@@ -23,7 +23,7 @@ class FakeSteam extends EventEmitter {
     this.unblocked = [];
     this.myFriends = {};
   }
-  logOn() { this.steamID = new SteamID('76561199000000001'); setImmediate(() => this.emit('loggedOn')); }
+  logOn() { this.logons = (this.logons || 0) + 1; this.steamID = new SteamID('76561199000000001'); setImmediate(() => this.emit('loggedOn')); }
   logOff() {}
   setPersona() {}
   gamesPlayed(apps) { this.playing = apps; }
@@ -48,8 +48,8 @@ class FakeSteam extends EventEmitter {
   }
 }
 
-function session(client) {
-  const gc = new DeadlockGC({ client, refreshToken: 't', saveRefreshToken() {}, log: quiet });
+function session(client, opts = {}) {
+  const gc = new DeadlockGC({ client, refreshToken: 't', saveRefreshToken() {}, log: quiet, ...opts });
   gc._lastRequestAt = -Infinity;
   return gc;
 }
@@ -179,4 +179,78 @@ test('decline all open requests', async () => {
 test('friend actions need a Steam login', async () => {
   const gc = session(new FakeSteam());
   await assert.rejects(gc.friendAction(42, 'accept'), { code: 'not_ready' });
+});
+
+test('after a rate limit the bot pauses instead of asking Steam again, and backs off further', async () => {
+  let t = 0;
+  let answer = 5;
+  const client = new FakeSteam({ onMetadata: () => ({ result: answer, metadata_salt: 1, replay_group_id: 1 }) });
+  const gc = session(client, { now: () => t });
+  gc.start();
+  await new Promise((r) => gc.once('ready', r));
+  const asked = () => client.sent.filter((m) => m === MSG.METADATA).length;
+
+  await assert.rejects(gc.matchSalts(1), { code: 'rate_limited' });
+  assert.strictEqual(asked(), 1);
+  t += 30 * 60 * 1000; // still within the 35 min pause: Steam isn't asked
+  await assert.rejects(gc.matchSalts(1), /paused/);
+  assert.strictEqual(asked(), 1);
+  assert.ok(gc.status().metadata_paused_until);
+
+  t += 6 * 60 * 1000; // pause over, but Steam still refuses: the next pause is 70 min
+  await assert.rejects(gc.matchSalts(1), { code: 'rate_limited' });
+  t += 60 * 60 * 1000;
+  await assert.rejects(gc.matchSalts(1), /paused/);
+  assert.strictEqual(asked(), 2);
+
+  // the probe may ask anyway; a success resets the backoff
+  answer = 1;
+  assert.deepStrictEqual(await gc.matchSalts(1, null, { force: true }), { cluster_id: 1, metadata_salt: 1, replay_salt: 0 });
+  answer = 5;
+  t += 11 * 60 * 1000;
+  await assert.rejects(gc.matchSalts(1), { code: 'rate_limited' });
+  t += 36 * 60 * 1000; // back to a 35 min pause
+  answer = 1;
+  await gc.matchSalts(1);
+  gc.stop();
+});
+
+test('a game started on the bot account elsewhere pauses the bot until it ends, without kicking it', async () => {
+  const client = new FakeSteam();
+  const gc = session(client);
+  gc.start();
+  await new Promise((r) => gc.once('ready', r));
+  client.played = [];
+  client.gamesPlayed = (apps) => client.played.push(apps);
+
+  client.emit('playingState', true, APP_ID);
+  assert.strictEqual(gc.status().gc_ready, false);
+  assert.strictEqual(gc.status().playing_elsewhere, true);
+  assert.match(gc.status().last_error, /another device/);
+  assert.deepStrictEqual(client.played, []); // never takes the game back while it's in use
+
+  client.emit('playingState', false, 0);
+  await new Promise((r) => gc.once('ready', r));
+  assert.deepStrictEqual(client.played, [[APP_ID]]);
+  assert.strictEqual(gc.status().last_error, null);
+  gc.stop();
+});
+
+test('thrown out by a logon elsewhere: logs back on later by itself', async () => {
+  const client = new FakeSteam();
+  const gc = session(client, { reloginDelayMs: 20 });
+  gc.start();
+  await new Promise((r) => gc.once('ready', r));
+  const kicked = Object.assign(new Error('LoggedInElsewhere'), { eresult: SteamUser.EResult.LoggedInElsewhere });
+  client.emit('error', kicked);
+  assert.strictEqual(gc.status().logged_in, false);
+  assert.match(gc.status().last_error, /logging back on/);
+  await new Promise((r) => gc.once('ready', r));
+  assert.strictEqual(client.logons, 2);
+
+  // any other fatal error (e.g. revoked login) is left for a human
+  client.emit('error', Object.assign(new Error('AccessDenied'), { eresult: SteamUser.EResult.AccessDenied }));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.strictEqual(client.logons, 2);
+  gc.stop();
 });
