@@ -28,6 +28,12 @@ keep the baselines of their own patch. Baselines always come from
 [deadlock-api.com](https://deadlock-api.com). Without the fetcher, tracked matches do too, but
 it only has the matches it happened to collect, usually 30–90 minutes after they end.
 
+With the fetcher, a player's whole match history is stored at once; the match files (all 12
+players, damage, healing, MVP ranks) follow. Downloading those needs a per-match key ("salt")
+that Steam only hands out about 17 times per half hour per account, so the fetcher asks
+deadlock-api for it first, which already has the salts of most matches, and spends the bot's
+quota only on the rest.
+
 Accounts are added and removed at `/accounts` (SteamID3, SteamID64 or a
 `steamcommunity.com/profiles/…` link). There is no login, so run it on a private network or
 behind an authenticating proxy.

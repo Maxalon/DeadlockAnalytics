@@ -30,7 +30,9 @@ if (!token) {
   log.error(`no Steam login yet: run \`docker compose run --rm -it fetcher npm run login\` first (${config.refreshTokenFile})`);
 }
 const gc = new DeadlockGC({ refreshToken: token, saveRefreshToken: saveToken, log });
-const service = new Service({ gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl });
+const service = new Service({
+  gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl, saltsApi: config.saltsApi, apiKey: config.apiKey, log,
+});
 if (token) gc.start();
 
 http.createServer(async (req, res) => {

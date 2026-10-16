@@ -211,8 +211,11 @@ def _sync_from_fetcher(conn: sqlite3.Connection, fetcher: Fetcher, account_id: i
             match = fetcher.match(match_id, account_id)
         except FetcherError as exc:
             if exc.code == "rate_limited":
-                log.info("Steam rate limit for %s; the next sync continues", account_id)
-                break
+                # Only this match's salts were refused (deadlock-api didn't have them and the bot's
+                # Steam quota is spent); the next one may still be served, so keep going. The bot
+                # pauses on its own, so this costs Steam nothing.
+                log.info("no salts for %s of %s right now; the next sync retries", match_id, account_id)
+                continue
             if exc.code not in SKIPPABLE_MATCH_ERRORS:
                 raise
             log.info("no match file for %s of %s: %s", match_id, account_id, exc)
