@@ -83,3 +83,49 @@ test('the account is passed on, and /salts asks the GC every time', async () => 
   assert.strictEqual((await svc.handle('/salts/115701682')).status, 200);
   assert.deepStrictEqual(calls.targets, [113956776, 113956776, null]);
 });
+
+function withSaltsApi(api) {
+  const calls = { gc: 0, urls: [], headers: [] };
+  const gc = { matchSalts: async () => { calls.gc += 1; return { cluster_id: 7, metadata_salt: 77 }; } };
+  const fetchFn = async (url, opts = {}) => {
+    calls.urls.push(url);
+    if (url.startsWith('https://dapi.test/')) {
+      calls.headers.push(opts.headers || {});
+      return api(url);
+    }
+    return new Response(fixture);
+  };
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
+  const svc = new Service({
+    gc, cacheDir, replayUrl: config.replayUrl, saltsApi: 'https://dapi.test/', apiKey: 'k', fetch: fetchFn,
+    log: { info() {}, warn() {} },
+  });
+  return { svc, calls };
+}
+
+test('salts come from deadlock-api first; the bot quota is not touched', async () => {
+  const { svc, calls } = withSaltsApi(() => Response.json({ match_id: 115701682, cluster_id: 186, metadata_salt: 386809196 }));
+  const res = await svc.handle('/matches/115701682');
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(calls.gc, 0);
+  assert.deepStrictEqual(calls.urls, [
+    'https://dapi.test/v1/matches/115701682/salts',
+    'http://replay186.valve.net/1422450/115701682_386809196.meta.bz2',
+  ]);
+  assert.deepStrictEqual(calls.headers, [{ 'X-API-KEY': 'k' }]);
+});
+
+test('when deadlock-api has no salts, is limited, or is down, the bot asks Steam', async () => {
+  const answers = [
+    () => Response.json({ status: 404, error: 'not found' }, { status: 404 }),
+    () => Response.json({ error: 'rate limited' }, { status: 429 }),
+    () => Response.json({ match_id: 1, cluster_id: null, metadata_salt: null }),
+    () => { throw new Error('connect ECONNREFUSED'); },
+  ];
+  for (const api of answers) {
+    const { svc, calls } = withSaltsApi(api);
+    assert.strictEqual((await svc.handle('/matches/115701682')).status, 200);
+    assert.strictEqual(calls.gc, 1);
+    assert.strictEqual(calls.urls.at(-1), 'http://replay7.valve.net/1422450/115701682_77.meta.bz2');
+  }
+});

@@ -93,10 +93,11 @@ def test_rate_limited_matches_count_right_away_and_are_enriched_later(conn, fetc
     limited = FetcherError("rate_limited", "Steam rate-limited match metadata requests")
     fetcher = FakeFetcher(
         history=[history_entry(115701682), history_entry(115600000, won=False), history_entry(115500000)],
-        errors={115701682: limited},
+        errors={115701682: limited, 115600000: limited, 115500000: limited},
     )
     assert jobs.sync_account(conn, FakeApi(), ME, settings(), fetcher=fetcher) == 3
-    assert fetcher.fetched == [115701682]  # stopped at the first rate limit
+    # every match is tried: deadlock-api may have the salts of one the bot can't get right now
+    assert fetcher.fetched == [115701682, 115600000, 115500000]
 
     # games and wins are right before any match file arrived (win = player_team == match_result)
     me = queries.accounts(conn)[0]

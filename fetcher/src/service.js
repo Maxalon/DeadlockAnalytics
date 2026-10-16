@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { decodeMetadataFile } = require('./metadata');
 
+const SALTS_TIMEOUT_MS = 15000;
+
 const STATUS = {
   not_ready: 503, timeout: 504, private: 403, rate_limited: 429, invalid_match: 404, in_flight: 409, gc_error: 502,
   bad_request: 400, conflict: 409,
@@ -11,10 +13,19 @@ const STATUS = {
 
 class Service {
   /**
-   * @param {{gc: import('./gc').DeadlockGC, cacheDir: string, replayUrl: Function, fetch?: typeof fetch}} deps
+   * @param {object} deps
+   * @param {import('./gc').DeadlockGC} deps.gc
+   * @param {string} deps.cacheDir
+   * @param {Function} deps.replayUrl
+   * @param {string} [deps.saltsApi]  deadlock-api base URL to ask for salts first; empty: only the bot
+   * @param {string} [deps.apiKey]  deadlock-api key (X-API-KEY), optional
+   * @param {typeof fetch} [deps.fetch]
    */
-  constructor({ gc, cacheDir, replayUrl, fetch: fetchFn = fetch }) {
+  constructor({ gc, cacheDir, replayUrl, saltsApi = '', apiKey = '', fetch: fetchFn = fetch, log = console }) {
     this.gc = gc;
+    this.saltsApi = saltsApi.replace(/\/$/, '');
+    this.apiKey = apiKey;
+    this.log = log;
     this.cacheDir = cacheDir;
     this.replayUrl = replayUrl;
     this.fetch = fetchFn;
@@ -42,7 +53,7 @@ class Service {
     const cached = path.join(this.cacheDir, `${matchId}.json`);
     if (fs.existsSync(cached)) return { status: 200, body: JSON.parse(fs.readFileSync(cached, 'utf8')) };
 
-    const salts = await this.gc.matchSalts(matchId, targetAccountId);
+    const salts = await this.saltsFor(matchId, targetAccountId);
     const url = this.replayUrl(salts.cluster_id, matchId, salts.metadata_salt);
     const resp = await this.fetch(url);
     if (resp.status === 404) return { status: 404, body: { error: 'gone', message: `Valve no longer serves the files of match ${matchId}` } };
@@ -51,6 +62,32 @@ class Service {
     fs.writeFileSync(`${cached}.tmp`, JSON.stringify(match));
     fs.renameSync(`${cached}.tmp`, cached);
     return { status: 200, body: match };
+  }
+
+  /**
+   * The salts for a match's files. Only these are rate-limited (per Steam account, ~17 per half
+   * hour), the download from Valve's replay servers isn't. deadlock-api already has the salts of a
+   * great many matches and serves those freely (and fetches others with its own bots, under its own
+   * limit), so ask it first and use the bot's quota only for what it can't give.
+   */
+  async saltsFor(matchId, targetAccountId) {
+    if (this.saltsApi) {
+      try {
+        const resp = await this.fetch(`${this.saltsApi}/v1/matches/${matchId}/salts`, {
+          headers: this.apiKey ? { 'X-API-KEY': this.apiKey } : {},
+          signal: AbortSignal.timeout(SALTS_TIMEOUT_MS),
+        });
+        if (resp.ok) {
+          const s = await resp.json();
+          if (s.cluster_id && s.metadata_salt) return { cluster_id: s.cluster_id, metadata_salt: s.metadata_salt };
+        } else {
+          this.log.info(`deadlock-api has no salts for ${matchId} right now (HTTP ${resp.status}); asking Steam`);
+        }
+      } catch (err) {
+        this.log.warn(`deadlock-api salts for ${matchId} failed (${err.message}); asking Steam`);
+      }
+    }
+    return this.gc.matchSalts(matchId, targetAccountId);
   }
 
   /** Only the GC request for a match's salts, never cached: for measuring Steam's rate limit. */
