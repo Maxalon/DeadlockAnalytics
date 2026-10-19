@@ -67,6 +67,19 @@ tr.tracked td { background: var(--tracked); }
 .chart .dot { fill: var(--accent); }
 .chart .dot.mvp { fill: var(--mvp); }
 .chart .dot.key { fill: var(--surface); stroke: var(--key); stroke-width: 2; }
+.chart-wrap { position: relative; }
+.chart .hit rect { fill: transparent; cursor: pointer; }
+.chart .hit:focus { outline: none; }
+.chart .crosshair { stroke: var(--muted); stroke-width: 1; opacity: 0; }
+.chart .focus-ring { fill: none; stroke: var(--text); stroke-width: 1.5; opacity: 0; }
+.chart.active .crosshair, .chart.active .focus-ring { opacity: 1; }
+.chart-tip { position: absolute; top: 8px; min-width: 190px; padding: 8px 10px; font-size: .82rem; line-height: 1.45;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .25); pointer-events: none; }
+.chart-tip .tip-head { font-weight: 600; }
+.chart-tip .tip-row { display: flex; align-items: center; gap: 6px; }
+.chart-tip .tip-row i { display: inline-block; flex: none; width: 14px; }
+.chart-tip .tip-row .dot-mvp, .chart-tip .tip-row .dot-key { width: 9px; margin: 0 2.5px; }
+.chart-tip .tip-hint { margin-top: 4px; font-size: .75rem; }
 .legend { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .legend i { display: inline-block; }
