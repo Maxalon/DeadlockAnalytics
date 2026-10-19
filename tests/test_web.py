@@ -260,3 +260,22 @@ def test_chart_points_link_to_their_match_with_details():
     assert 'href="/matches/1001"' in svg and 'data-rank="MVP"' in svg
     assert 'data-hero="Vindicta"' in svg and 'data-kda="12 / 2 / 21"' in svg and 'data-mvp="+2.00"' in svg
     assert "<title>2026-10-12 23:49 UTC · Vindicta · Win" in svg  # native tooltip without JavaScript
+
+
+def test_match_page_shows_player_names_and_where_the_model_agrees(tmp_path, match_payload, research_baselines):
+    from app import db
+
+    c, s = client(tmp_path)
+    seed(s, match_payload, research_baselines)
+    conn = db.connect(s.database_path)
+    api = FakeApi()
+    assert jobs.refresh_player_names(conn, api) == 12
+    assert jobs.refresh_player_names(conn, api) == 0  # remembered, not asked again
+    conn.close()
+    page = c.get("/matches/115701682").text
+    assert "player113956776" in page and 'href="/players/113956776"' in page
+    assert "steamcommunity.com/profiles/[U:1:" in page  # untracked players link to Steam
+    assert ">Rank<" in page and ">Valve<" not in page and ">Model<" not in page
+    # research match: the model reproduces Valve's three ranks
+    assert page.count("badge mvp agrees") + page.count("badge key agrees") == 3
+    assert "Our model agrees with Valve on all 3 ranks" in page and "model-note" not in page

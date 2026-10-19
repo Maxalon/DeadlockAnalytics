@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import hero, rank_badge, score %}
+{% from "_macros.html" import hero, rank_badge, rank_name, player_line, score %}
 {% block title %}Match {{ match.match_id }} · Deadlock Analytics{% endblock %}
 {% block head %}{% if fetching %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block content %}
@@ -18,28 +18,35 @@
 <p>Only the tracked player's line from their match history is stored so far.</p>
 {% endif %}
 {% for p in players %}
-<p>{{ hero(heroes, p.hero_id) }} · {{ "Win" if p.team == match.winning_team else "Loss" }} · {{ p.kills }} / {{ p.deaths }} / {{ p.assists }} · {{ p.net_worth|num }} souls{% if p.account_id in tracked %} · <a href="/players/{{ p.account_id }}">profile</a>{% endif %}</p>
+<p>{{ hero(heroes, p.hero_id) }} {{ player_line(p, tracked) }} · {{ "Win" if p.team == match.winning_team else "Loss" }} · {{ p.kills }} / {{ p.deaths }} / {{ p.assists }} · {{ p.net_worth|num }} souls</p>
 {% endfor %}
 {% else %}
 {% if match.not_scored %}<p class="muted">Not scored: played out, but it doesn't count (e.g. someone left early).</p>{% endif %}
+{% if model_check %}
+<p class="model-check">{% if model_check.agree == model_check.total %}<span class="badge-dot"></span> Our model agrees with Valve on all {{ model_check.total }} ranks.
+{%- else %}Our model differs from Valve on {{ model_check.total - model_check.agree }} of {{ model_check.total }} players; its picks are noted under the ranks.{% endif %}</p>
+{% endif %}
 {% for team in (match.winning_team, 1 - match.winning_team) %}
 <section>
   <h2>{{ "Winning team" if team == match.winning_team else "Losing team" }}</h2>
   <div class="scroll">
   <table class="match">
-    <thead><tr><th>Player</th>{% for c in players[0].components %}<th class="num">{{ c.label }}</th>{% endfor %}<th class="num">Score</th><th>Valve</th><th>Model</th></tr></thead>
+    <thead><tr><th>Player</th>{% for c in players[0].components %}<th class="num">{{ c.label }}</th>{% endfor %}<th class="num">Score</th><th title="Valve's MVP and Key Players. A dot on the badge: our model picked the same; otherwise its pick is noted below.">Rank</th></tr></thead>
     <tbody>
     {% for p in players|selectattr("team", "equalto", team)|sort(attribute="sort_score", reverse=true) %}
       <tr class="{{ 'tracked' if p.account_id in tracked }}">
-        <td>{{ hero(heroes, p.hero_id) }}{% if p.account_id in tracked %} <a class="small" href="/players/{{ p.account_id }}">profile</a>{% endif %}</td>
+        <td>{{ hero(heroes, p.hero_id) }}<br>{{ player_line(p, tracked) }}</td>
         {% for c in p.components %}
         <td class="num" title="{% if c.z is not none %}hero mean {{ '%.1f'|format(c.mean) }}, SD {{ '%.1f'|format(c.sd) }}, z {{ '%+.2f'|format(c.z) }} × weight {{ c.weight }}{% endif %}">
           {{ c.value|num }}<br><span class="small">{{ score(c.contribution if c.z is not none else none) }}</span>
         </td>
         {% endfor %}
         <td class="num"><strong>{{ score(p.score) }}</strong></td>
-        <td>{{ rank_badge(p.mvp_rank) }}</td>
-        <td>{{ rank_badge(p.predicted_rank) }}</td>
+        <td class="rank">
+          {%- set agrees = snapshot and p.mvp_rank and p.mvp_rank == p.predicted_rank %}
+          {{ rank_badge(p.mvp_rank, agrees) }}
+          {%- if snapshot and p.mvp_rank != p.predicted_rank %}<div class="model-note small muted">model: {{ rank_name(p.predicted_rank) }}</div>{% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>
@@ -51,6 +58,7 @@
 
 <p class="muted small">
   Each cell: raw value, and below it the weighted hero-relative z-score it adds to the score (hover for the hero mean and SD).
+  Rank: Valve's MVP / Key Players; a dot on the badge means our model picked the same.
   {% if snapshot %}Baselines: {{ snapshot.n_matches|num }} matches, {{ snapshot.window_start|dt }} → {{ snapshot.window_end|dt }}.{% else %}No baseline snapshot yet, so scores are blank.{% endif %}
   <a href="/model">How the score works</a>.
 </p>

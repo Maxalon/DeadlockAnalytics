@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS hero_baselines (
     PRIMARY KEY (snapshot_id, hero_id, stat)
 );
 
+-- Steam names and avatars of everyone in a stored match (not only tracked accounts), for the
+-- match pages. Filled in the background from deadlock-api's Steam profile endpoint.
+CREATE TABLE IF NOT EXISTS players (
+    account_id      INTEGER PRIMARY KEY,
+    persona_name    TEXT,                         -- NULL: Steam returned no profile
+    avatar_url      TEXT,
+    fetched_at      INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS heroes (
     hero_id         INTEGER PRIMARY KEY,
     name            TEXT NOT NULL,

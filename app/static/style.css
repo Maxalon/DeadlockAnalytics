@@ -54,6 +54,17 @@ tbody tr:last-child td { border-bottom: none; }
 tr.tracked td { background: var(--tracked); }
 .hero { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .hero img { border-radius: 4px; }
+table.match td { vertical-align: middle; }
+.player-line { display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; font-size: .85rem; }
+.avatar { border-radius: 4px; flex: none; }
+td.rank { white-space: nowrap; }
+.model-note { margin-top: 3px; }
+/* Our model agrees with Valve's rank: a dot on the badge (its presence carries the meaning, not its colour). */
+.badge.agrees { position: relative; }
+.badge.agrees::after, .badge-dot { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+.badge.agrees::after { position: absolute; top: -3px; right: -3px; }
+.model-check { font-size: .9rem; color: var(--muted); }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
 .badge.mvp { background: var(--mvp); color: #1d1c1a; }
 .badge.key { border: 1px solid var(--key); color: var(--key); }
