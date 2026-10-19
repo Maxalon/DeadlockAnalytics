@@ -148,3 +148,19 @@ test('a match deadlock-api is busy with is not asked about again before Retry-Af
   assert.strictEqual(asked(), 3);
   assert.strictEqual(calls.gc, 4);
 });
+
+test('steam=0 only uses salts deadlock-api has; pages limits the history', async () => {
+  const { svc, calls } = withSaltsApi(() => Response.json({}, { status: 404 }));
+  const res = await svc.handle('/matches/115701682', 'GET', new URLSearchParams('steam=0'));
+  assert.strictEqual(res.status, 404);
+  assert.strictEqual(res.body.error, 'no_salts');
+  assert.strictEqual(calls.gc, 0);
+
+  const { svc: s2 } = service({ salts: () => null, download: () => null });
+  let asked = null;
+  s2.gc.fullHistory = async (id, pages) => { asked = pages; return { matches: [], complete: true }; };
+  await s2.handle('/history/5', 'GET', new URLSearchParams('pages=1'));
+  assert.strictEqual(asked, 1);
+  await s2.handle('/history/5');
+  assert.strictEqual(asked, undefined);
+});

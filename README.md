@@ -19,7 +19,7 @@ from Valve through a Steam account of your own that the players add as a friend.
 
 | Job | Default interval | What it does |
 |---|---|---|
-| Account sync | 15 min | Fetches new matches of every tracked account (all 12 players) through the fetcher, or from `api.deadlock-api.com/v1/matches/metadata` without one |
+| Account sync | 15 min | With the fetcher: completes history-only matches whose salts deadlock-api already has (free). Without it: fetches new matches of every tracked account (all 12 players) from `api.deadlock-api.com/v1/matches/metadata` |
 | Hero baselines | daily | Samples 30,000 recent matches spread over the last 7 days and stores per-hero mean/SD for each scored stat |
 | Heroes / profiles | daily / each sync | Hero names and icons; Steam persona names and avatars |
 
@@ -30,9 +30,12 @@ it only has the matches it happened to collect, usually 30–90 minutes after th
 
 With the fetcher, a player's whole match history is stored at once; the match files (all 12
 players, damage, healing, MVP ranks) follow. Downloading those needs a per-match key ("salt")
-that Steam only hands out about 17 times per half hour per account, so the fetcher asks
-deadlock-api for it first, which already has the salts of most matches, and spends the bot's
-quota only on the rest.
+that Steam hands out sparingly, so the fetcher asks deadlock-api for it first, which already has
+the salts of most matches. The bot itself keeps to a daily budget per Steam account like
+deadlock-api's ingest tool (40 salts, 20 history pages per 24 h) and only spends it on request:
+a player's history when you press "Re-pull matches" (the newest page; all pages when the player
+is added), a match's file when you open a match that has no details yet. `/accounts` shows
+what's left.
 
 Accounts are added and removed at `/accounts` (SteamID3, SteamID64 or a
 `steamcommunity.com/profiles/…` link). There is no login, so run it on a private network or

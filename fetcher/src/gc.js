@@ -33,7 +33,7 @@ const KICKED = [SteamUser.EResult.LoggedInElsewhere, SteamUser.EResult.LogonSess
 class GcError extends Error {
   constructor(code, message) {
     super(message || code);
-    // not_ready | timeout | private | rate_limited | invalid_match | in_flight | gc_error | bad_request | conflict
+    // not_ready | timeout | private | rate_limited | quota | invalid_match | in_flight | gc_error | bad_request | conflict
     this.code = code;
   }
 }
@@ -46,8 +46,13 @@ class DeadlockGC extends EventEmitter {
    * @param {(token: string) => void} opts.saveRefreshToken called when Steam renews the token
    * @param {() => number} [opts.now] injectable clock for tests
    * @param {number} [opts.reloginDelayMs] first wait before logging back on after being kicked
+   * @param {import('./quota').RollingQuota} [opts.saltsQuota] daily budget for match salts
+   * @param {import('./quota').RollingQuota} [opts.historyQuota] daily budget for match history pages
    */
-  constructor({ client, refreshToken, saveRefreshToken, log = console, now = Date.now, reloginDelayMs = RELOGIN_DELAY_MS }) {
+  constructor({
+    client, refreshToken, saveRefreshToken, log = console, now = Date.now, reloginDelayMs = RELOGIN_DELAY_MS,
+    saltsQuota = null, historyQuota = null,
+  }) {
     super();
     this.client = client || new SteamUser({ renewRefreshTokens: true, autoRelogin: true });
     this.refreshToken = refreshToken;
@@ -60,6 +65,8 @@ class DeadlockGC extends EventEmitter {
     this._queue = Promise.resolve();
     this._lastRequestAt = 0;
     this.now = now;
+    this.saltsQuota = saltsQuota;
+    this.historyQuota = historyQuota;
     this.playingElsewhere = false;
     this._metadataPausedUntil = 0;
     this._metadataPause = METADATA_PAUSE_MS;
@@ -86,6 +93,8 @@ class DeadlockGC extends EventEmitter {
       account_id: this.client.steamID ? this.client.steamID.accountid : null,
       playing_elsewhere: this.playingElsewhere,
       metadata_paused_until: this._metadataPausedUntil > this.now() ? new Date(this._metadataPausedUntil).toISOString() : null,
+      salts_budget: this.saltsQuota ? this.saltsQuota.status() : null,
+      history_budget: this.historyQuota ? this.historyQuota.status() : null,
       last_error: this.lastError,
     };
   }
@@ -260,6 +269,10 @@ class DeadlockGC extends EventEmitter {
 
   /** One page of `accountId`'s match history (newest first), older than `cursor` if given. */
   async historyPage(accountId, cursor) {
+    if (this.historyQuota && !this.historyQuota.take()) {
+      const next = this.historyQuota.status().next_free_at;
+      throw new GcError('quota', `the bot's daily budget for match history is used up; next one free at ${next}`);
+    }
     const body = { account_id: accountId };
     if (cursor) body.continue_cursor = cursor;
     const resp = await this._request(MSG.HISTORY, proto.GetMatchHistory, body, proto.GetMatchHistoryResponse);
@@ -278,7 +291,7 @@ class DeadlockGC extends EventEmitter {
       try {
         resp = await this.historyPage(accountId, cursor);
       } catch (err) {
-        if (err.code === 'rate_limited' && matches.length) return { matches, complete: false };
+        if ((err.code === 'rate_limited' || err.code === 'quota') && matches.length) return { matches, complete: false };
         throw err;
       }
       matches.push(...resp.matches);
@@ -299,6 +312,10 @@ class DeadlockGC extends EventEmitter {
     // `force` (the probe only): ask Steam even during a pause, to measure the block.
     if (!force && this.now() < this._metadataPausedUntil) {
       throw new GcError('rate_limited', `paused after a Steam rate limit until ${new Date(this._metadataPausedUntil).toISOString()}`);
+    }
+    if (this.saltsQuota && !this.saltsQuota.take() && !force) {
+      const next = this.saltsQuota.status().next_free_at;
+      throw new GcError('quota', `the bot's daily budget for match salts is used up; next one free at ${next}`);
     }
     const body = { match_id: matchId };
     if (targetAccountId) body.target_account_id = targetAccountId;

@@ -100,10 +100,11 @@ def create_app(
 
     @app.get("/accounts", response_class=HTMLResponse)
     def accounts_page(request: Request, error: str | None = None, bot_error: str | None = None):
-        bot = None
+        bot, bot_status = None, None
         if fetcher is not None:
             try:
                 bot = fetcher.friends()
+                bot_status = fetcher.status()
             except FetcherError as exc:
                 bot_error = bot_error or str(exc)
         accounts = queries.accounts(db())
@@ -114,6 +115,7 @@ def create_app(
             error=error,
             bot_enabled=fetcher is not None,
             bot=bot,
+            bot_status=bot_status,
             bot_error=bot_error,
             tracked={a["account_id"] for a in accounts},
         )
@@ -173,9 +175,11 @@ def create_app(
     @app.get("/players/{account_id}", response_class=HTMLResponse)
     def player(request: Request, account_id: int, page: int = 1):
         account = db().execute("SELECT * FROM accounts WHERE account_id = ?", (account_id,)).fetchone()
-        # Viewing a tracked player re-pulls their history in the background; the page shows
-        # what is stored now and reloads itself once the re-pull is done (see player.html).
-        if account and time.time() - (account["last_full_sync_at"] or 0) >= settings.view_sync_cooldown_s:
+        # Without the Steam bot, viewing a tracked player re-pulls their history from deadlock-api
+        # in the background (the page reloads itself once it's done, see player.html). The bot's
+        # Steam budget is only spent on the re-pull button.
+        recent = time.time() - (account["last_full_sync_at"] or 0) < settings.view_sync_cooldown_s if account else True
+        if fetcher is None and not recent:
             scheduler.request_account_sync(account_id)
         page = max(page, 1)
         matches = queries.player_matches(db(), settings.database_path, account_id, PAGE_SIZE, (page - 1) * PAGE_SIZE)
@@ -193,7 +197,6 @@ def create_app(
             heroes_played=queries.hero_summary(db(), account_id),
             chart=charts.score_trend(trend, {h: r["name"] for h, r in queries.heroes(db()).items()}),
             syncing=account is not None and scheduler.is_syncing(account_id),
-            next_sync=(account["last_synced_at"] or 0) + settings.sync_interval_s if account else None,
         )
 
     @app.get("/matches/{match_id}", response_class=HTMLResponse)
@@ -202,7 +205,16 @@ def create_app(
         if data is None:
             raise HTTPException(404, "Match not stored (only matches of tracked accounts are)")
         tracked = {r["account_id"] for r in db().execute("SELECT account_id FROM accounts")}
-        return render(request, "match.html", tracked=tracked, **data)
+        fetching, fetch_error = False, None
+        if not data["match"]["detailed"] and fetcher is not None:
+            # Opening a match without details fetches them (deadlock-api's salts, else the bot's
+            # daily Steam budget); the page reloads itself until they're in.
+            error = scheduler.match_errors.get(match_id)
+            if not scheduler.is_fetching_match(match_id) and (error is None or time.time() - error[1] > 120):
+                scheduler.request_match_details(match_id)
+            fetching = scheduler.is_fetching_match(match_id)
+            fetch_error = None if fetching or error is None else error[0]
+        return render(request, "match.html", tracked=tracked, fetching=fetching, fetch_error=fetch_error, **data)
 
     @app.get("/model", response_class=HTMLResponse)
     def model(request: Request):

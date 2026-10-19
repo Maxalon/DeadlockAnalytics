@@ -80,12 +80,14 @@ def fetcher_match():
 class FakeFetcher:
     """Stands in for app.fetcher.Fetcher."""
 
-    def __init__(self, history=(), matches=None, ready=True, errors=None):
+    def __init__(self, history=(), matches=None, ready=True, errors=None, api_has=()):
         self._history = list(history)
         self.matches = dict(matches or {})
         self.ready = ready
-        self.errors = dict(errors or {})  # match_id -> FetcherError
-        self.fetched = []
+        self.errors = dict(errors or {})  # match_id -> FetcherError (when the bot is asked)
+        self.api_has = set(api_has)  # matches deadlock-api has salts for
+        self.fetched = []  # (match_id, account_id, steam) per match request
+        self.history_pages = []
         self.actions = []
         self.bot = {"logged_in": True, "incoming": [], "friends": [], "blocked": []}
 
@@ -95,14 +97,30 @@ class FakeFetcher:
         if not self.ready:
             raise FetcherError("not_ready", "Steam bot not ready: not logged in")
 
-    def history(self, account_id):
+    def history(self, account_id, pages=None):
+        self.history_pages.append(pages)
         return self._history
 
-    def match(self, match_id, account_id=None):
-        self.fetched.append(match_id)
+    def match(self, match_id, account_id=None, steam=True):
+        from app.fetcher import FetcherError
+
+        self.fetched.append((match_id, account_id, steam))
+        if match_id in self.api_has:
+            return self.matches[match_id]
+        if not steam:
+            raise FetcherError("no_salts", f"deadlock-api has no salts for {match_id} (yet)")
         if match_id in self.errors:
             raise self.errors[match_id]
         return self.matches[match_id]
+
+    def status(self):
+        budget = {"limit": 40, "remaining": 38, "next_free_at": None}
+        return {
+            "logged_in": True,
+            "gc_ready": True,
+            "salts_budget": budget,
+            "history_budget": {**budget, "limit": 20, "remaining": 17},
+        }
 
     def friends(self):
         return self.bot

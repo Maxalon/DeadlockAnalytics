@@ -25,9 +25,6 @@ SYNC_LOOKBACK_S = 2 * 86400
 FULL_RESYNC_S = 86400
 TEAMS = {"Team0": 0, "Team1": 1}
 NORMAL_GAME_MODE = 1  # Valve's ECitadelGameMode; the same matches deadlock-api's game_mode=normal returns
-# Fetcher errors for one match that shouldn't fail the account's sync: the match is still being
-# processed (next sync gets it), or Valve no longer has it.
-SKIPPABLE_MATCH_ERRORS = {"in_flight", "gone", "invalid_match", "download_failed"}
 
 
 def _unix(value) -> int:
@@ -170,14 +167,11 @@ def sync_account(
         try:
             return _sync_from_fetcher(conn, fetcher, account_id, settings)
         except FetcherError as exc:
-            if exc.code == "rate_limited":
+            if exc.code in ("rate_limited", "quota"):
                 # Temporary, and the bot will get there: deadlock-api would only add a partial view.
-                log.info("Steam rate limit while reading %s's history; next sync continues", account_id)
+                log.info("no history for %s right now: %s", account_id, exc)
                 with transaction(conn):
-                    conn.execute(
-                        "UPDATE accounts SET last_error = ? WHERE account_id = ?",
-                        ("Steam rate limit; trying again with the next sync", account_id),
-                    )
+                    conn.execute("UPDATE accounts SET last_error = ? WHERE account_id = ?", (str(exc), account_id))
                 return 0
             log.warning("Steam bot sync failed for %s (%s); using deadlock-api", account_id, exc)
             fallback_reason = f"Steam bot: {exc} (used deadlock-api instead)"
@@ -185,53 +179,88 @@ def sync_account(
 
 
 def _sync_from_fetcher(conn: sqlite3.Connection, fetcher: Fetcher, account_id: int, settings: Settings) -> int:
-    """Store the player's whole match history from Valve at once, then download the match files
-    still missing (all 12 players, damage, healing, MVP ranks), newest first. Steam limits how
-    fast one account may fetch match files: on its rate limit the sync stops there and the next
-    one continues. Returns matches newly stored."""
+    """Store the player's match history from Valve. Steam limits the bot per day, so this only
+    runs when someone asks (the re-pull button, adding the player) and reads just the newest
+    page, all pages only the first time. Match files are not downloaded here with the bot's
+    budget: only those deadlock-api already has salts for; the rest when a match is opened
+    (fetch_match_details). Returns matches newly stored."""
     started = int(time.time())
     fetcher.ensure_ready()
+    first_time = not conn.execute(
+        "SELECT 1 FROM accounts WHERE account_id = ? AND last_source = 'Steam bot'", (account_id,)
+    ).fetchone()
     entries = [
         h
-        for h in fetcher.history(account_id)
+        for h in fetcher.history(account_id, pages=None if first_time else 1)
         if h["game_mode"] == NORMAL_GAME_MODE and h["start_time"] >= settings.backfill_since
     ]
     with transaction(conn):
         stored = sum(store_history_entry(conn, account_id, h) for h in entries)
-    undetailed = [
-        r[0]
-        for r in conn.execute(
-            """SELECT m.match_id FROM matches m JOIN match_players mp ON mp.match_id = m.match_id
-               WHERE mp.account_id = ? AND m.detailed = 0 ORDER BY m.match_id DESC""",
-            (account_id,),
-        )
-    ]
-    for match_id in undetailed:
-        try:
-            match = fetcher.match(match_id, account_id)
-        except FetcherError as exc:
-            if exc.code == "rate_limited":
-                # Only this match's salts were refused (deadlock-api didn't have them and the bot's
-                # Steam quota is spent); the next one may still be served, so keep going. The bot
-                # pauses on its own, so this costs Steam nothing.
-                log.info("no salts for %s of %s right now; the next sync retries", match_id, account_id)
-                continue
-            if exc.code not in SKIPPABLE_MATCH_ERRORS:
-                raise
-            log.info("no match file for %s of %s: %s", match_id, account_id, exc)
-            continue
-        with transaction(conn):
-            store_match(conn, match)
+    enrich_from_deadlock_api(conn, fetcher, account_id)
     with transaction(conn):
         conn.execute(
             """UPDATE accounts SET last_synced_at = ?, last_full_sync_at = ?, last_error = NULL,
-                 last_source = 'Steam bot', pending_matches = (
-                   SELECT NULLIF(COUNT(*), 0) FROM matches m JOIN match_players mp ON mp.match_id = m.match_id
-                   WHERE mp.account_id = ? AND m.detailed = 0)
-               WHERE account_id = ?""",
-            (started, started, account_id, account_id),
+                 last_source = 'Steam bot' WHERE account_id = ?""",
+            (started, started, account_id),
         )
+    update_pending(conn, account_id)
     return stored
+
+
+def update_pending(conn: sqlite3.Connection, account_id: int) -> None:
+    with transaction(conn):
+        conn.execute(
+            """UPDATE accounts SET pending_matches = (
+                 SELECT NULLIF(COUNT(*), 0) FROM matches m JOIN match_players mp ON mp.match_id = m.match_id
+                 WHERE mp.account_id = ? AND m.detailed = 0)
+               WHERE account_id = ?""",
+            (account_id, account_id),
+        )
+
+
+def enrich_from_deadlock_api(conn: sqlite3.Connection, fetcher: Fetcher, account_id: int | None = None) -> int:
+    """Download the match files of history-only matches whose salts deadlock-api already has.
+    Costs the bot nothing, so it runs on every scheduled sync. Returns matches completed."""
+    rows = conn.execute(
+        """SELECT DISTINCT m.match_id, mp.account_id FROM matches m
+           JOIN match_players mp ON mp.match_id = m.match_id
+           JOIN accounts a ON a.account_id = mp.account_id
+           WHERE m.detailed = 0 AND (? IS NULL OR mp.account_id = ?) ORDER BY m.match_id DESC""",
+        (account_id, account_id),
+    ).fetchall()
+    done, seen, accounts = 0, set(), set()
+    for match_id, owner in rows:
+        accounts.add(owner)
+        if match_id in seen:
+            continue
+        seen.add(match_id)
+        try:
+            match = fetcher.match(match_id, owner, steam=False)
+        except FetcherError as exc:
+            if exc.code == "unreachable":
+                raise
+            continue  # no salts there yet, or the file is gone: stays history-only for now
+        with transaction(conn):
+            store_match(conn, match)
+        done += 1
+    for owner in accounts:
+        update_pending(conn, owner)
+    return done
+
+
+def fetch_match_details(conn: sqlite3.Connection, fetcher: Fetcher, match_id: int) -> None:
+    """Someone opened a history-only match: get its file, through deadlock-api if it has the
+    salts, else with the bot's daily Steam budget. Raises FetcherError when that can't be done now."""
+    owner = conn.execute(
+        """SELECT mp.account_id FROM match_players mp JOIN accounts a ON a.account_id = mp.account_id
+           WHERE mp.match_id = ? LIMIT 1""",
+        (match_id,),
+    ).fetchone()
+    match = fetcher.match(match_id, owner[0] if owner else None)
+    with transaction(conn):
+        store_match(conn, match)
+    if owner:
+        update_pending(conn, owner[0])
 
 
 def _sync_from_api(

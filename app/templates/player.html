@@ -12,7 +12,7 @@
   <div class="sync">
     <span class="muted small">
       {% if syncing %}Pulling matches…{% else %}Matches pulled {{ account.last_full_sync_at|dt }}{% endif %}
-      {% if account.pending_matches and not syncing %} · <span class="muted" title="Games and win rate already count these matches. Steam limits how fast the bot may download match files, so damage, healing, MVP ranks and scores for them follow over the next syncs.">details for {{ account.pending_matches }} matches still to come, next try around {{ next_sync|dt }}</span>{% endif %}
+      {% if account.pending_matches and not syncing %} · <span class="muted" title="Games and win rate already count these matches. Damage, healing, MVP ranks and scores come with each match's file: fetched when you open the match, or earlier if deadlock-api has it.">{{ account.pending_matches }} matches without details yet (open one to fetch it)</span>{% endif %}
       {% if account.last_error and not syncing %} · <span class="neg">last pull failed: {{ account.last_error }}</span>{% endif %}
     </span>
     <form method="post" action="/players/{{ account_id }}/sync"><button type="submit"{% if syncing %} disabled{% endif %}>Re-pull matches</button></form>

@@ -36,13 +36,24 @@ class Fetcher:
             reason = status.get("last_error") or ("not logged in" if not status.get("logged_in") else "no GC session")
             raise FetcherError("not_ready", f"Steam bot not ready: {reason}")
 
-    def history(self, account_id: int) -> list[dict]:
-        return self._request("GET", f"/history/{account_id}")["matches"]
+    def status(self) -> dict:
+        """/health: login, GC session, and the bot's remaining daily Steam budgets."""
+        return self._request("GET", "/health", timeout=5)
 
-    def match(self, match_id: int, account_id: int | None = None) -> dict:
-        """account_id: whose history the match is from; the game sends it with the request too."""
-        params = {"account": account_id} if account_id else None
-        return self._request("GET", f"/matches/{match_id}", params=params)
+    def history(self, account_id: int, pages: int | None = None) -> list[dict]:
+        """`pages`: how many history pages to follow (one Steam request each); None: all."""
+        params = {"pages": pages} if pages else None
+        return self._request("GET", f"/history/{account_id}", params=params)["matches"]
+
+    def match(self, match_id: int, account_id: int | None = None, steam: bool = True) -> dict:
+        """account_id: whose history the match is from; the game sends it with the request too.
+        steam=False: only if deadlock-api already has the salts; never spends the bot's budget."""
+        params = {}
+        if account_id:
+            params["account"] = account_id
+        if not steam:
+            params["steam"] = 0
+        return self._request("GET", f"/matches/{match_id}", params=params or None)
 
     def friends(self) -> dict:
         """The bot's open friend requests, friends and blocked accounts. Short timeout: a page waits on it."""

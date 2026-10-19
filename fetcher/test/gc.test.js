@@ -6,6 +6,7 @@ const SteamID = require('steamid');
 const SteamUser = require('steam-user');
 const proto = require('../src/proto');
 const { DeadlockGC, APP_ID, MSG } = require('../src/gc');
+const { RollingQuota } = require('../src/quota');
 
 const quiet = { info() {}, warn() {}, error() {} };
 const enc = (T, body) => Buffer.from(T.encode(T.create(body)).finish());
@@ -252,5 +253,31 @@ test('thrown out by a logon elsewhere: logs back on later by itself', async () =
   client.emit('error', Object.assign(new Error('AccessDenied'), { eresult: SteamUser.EResult.AccessDenied }));
   await new Promise((r) => setTimeout(r, 60));
   assert.strictEqual(client.logons, 2);
+  gc.stop();
+});
+
+test('daily budgets: salts and history pages stop before Steam is asked once used up', async () => {
+  const client = new FakeSteam({
+    onMetadata: () => ({ result: 1, metadata_salt: 1, replay_group_id: 1 }),
+    onHistory: () => ({ result: 1, matches: [{ match_id: 1 }], continue_cursor: 5 }),
+  });
+  const gc = session(client, {
+    saltsQuota: new RollingQuota({ file: null, limit: 2 }),
+    historyQuota: new RollingQuota({ file: null, limit: 1 }),
+  });
+  gc.start();
+  await new Promise((r) => gc.once('ready', r));
+  const sent = (m) => client.sent.filter((x) => x === m).length;
+  await gc.matchSalts(1);
+  await gc.matchSalts(2);
+  await assert.rejects(gc.matchSalts(3), { code: 'quota' });
+  assert.strictEqual(sent(MSG.METADATA), 2);
+  assert.strictEqual(gc.status().salts_budget.remaining, 0);
+
+  // history: the second page would exceed the budget, so the first page comes back as incomplete
+  const h = await gc.fullHistory(7);
+  assert.deepStrictEqual([h.matches.length, h.complete], [1, false]);
+  await assert.rejects(gc.fullHistory(7), { code: 'quota' });
+  assert.strictEqual(sent(MSG.HISTORY), 1);
   gc.stop();
 });
