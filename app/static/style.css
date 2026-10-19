@@ -57,6 +57,8 @@ tr.tracked td { background: var(--tracked); }
 table.match td { vertical-align: middle; }
 .player-line { display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; font-size: .85rem; }
 .avatar { border-radius: 4px; flex: none; }
+.skill { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: .78rem; white-space: nowrap; }
+.skill img { flex: none; }
 td.rank { white-space: nowrap; }
 .model-note { margin-top: 3px; }
 /* Our model agrees with Valve's rank: a dot on the badge (its presence carries the meaning, not its colour). */

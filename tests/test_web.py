@@ -188,6 +188,9 @@ def test_old_database_is_migrated_without_losing_matches(tmp_path, match_payload
              ally_healing INTEGER NOT NULL, mvp_rank INTEGER, abandon_time_s INTEGER NOT NULL DEFAULT 0,
              PRIMARY KEY (match_id, player_slot));
            CREATE INDEX match_players_account ON match_players(account_id, match_id);
+           CREATE TABLE players (account_id INTEGER PRIMARY KEY, persona_name TEXT, avatar_url TEXT,
+             fetched_at INTEGER NOT NULL);
+           INSERT INTO players VALUES (113956776, 'me', NULL, 5);
            INSERT INTO matches VALUES (1, 0, 60, 'Unranked', 'Normal', 1, NULL, 0);
            INSERT INTO match_players VALUES (1, 3, 113956776, 1, 3, 1, 2, 3, 4000, 500, 60, 7, 1, 0);"""
     )
@@ -201,6 +204,10 @@ def test_old_database_is_migrated_without_losing_matches(tmp_path, match_payload
     assert nullable["player_damage"] and nullable["ally_healing"]
     indexes = [r["name"] for r in conn.execute("PRAGMA index_list(match_players)")]
     assert "match_players_account" in indexes
+    assert row["badge"] is None and row["badge_source"] is None
+    player = conn.execute("SELECT * FROM players").fetchone()
+    assert (player["persona_name"], player["badge"], player["badge_fetched_at"]) == ("me", None, None)
+    assert conn.execute("SELECT low_pri_pool FROM matches").fetchone()[0] is None
     db.init(conn)  # idempotent
 
 
@@ -272,6 +279,7 @@ def test_match_page_shows_player_names_and_where_the_model_agrees(tmp_path, matc
     assert jobs.refresh_player_names(conn, api) == 12
     assert jobs.refresh_player_names(conn, api) == 0  # remembered, not asked again
     conn.close()
+    assert "no rank" not in c.get("/matches/115701682").text  # ranks not looked up yet: nothing shown
     page = c.get("/matches/115701682").text
     assert "player113956776" in page and 'href="/players/113956776"' in page
     assert "steamcommunity.com/profiles/[U:1:" in page  # untracked players link to Steam
@@ -279,3 +287,29 @@ def test_match_page_shows_player_names_and_where_the_model_agrees(tmp_path, matc
     # research match: the model reproduces Valve's three ranks
     assert page.count("badge mvp agrees") + page.count("badge key agrees") == 3
     assert "Our model agrees with Valve on all 3 ranks" in page and "model-note" not in page
+
+
+def test_match_page_shows_each_players_rank_and_the_team_average(tmp_path, match_payload, research_baselines):
+    from app import db
+
+    c, s = client(tmp_path)
+    seed(s, match_payload, research_baselines)
+    conn = db.connect(s.database_path)
+    api = FakeApi(badges={894295721: (64, 1791000000), 141213738: (96, 1791000000)})
+    jobs.refresh_ranks(conn, api)
+    jobs.refresh_player_ranks(conn, api)  # long after the match: ranks "now"
+    conn.close()
+    page = c.get("/matches/115701682").text
+    assert 'src="https://example/r6.webp"' in page and "Ritualist 4" in page and "Phantom 6" in page
+    assert page.count('<span class="muted">now</span>') == 2
+    assert page.count(">no rank<") == 10
+    # the match itself has no ranks (unranked, looked up too late), so no team average
+    assert "avg " not in page
+    conn = db.connect(s.database_path)
+    conn.execute("UPDATE match_players SET badge = 64, badge_source = 'match' WHERE account_id = 894295721")
+    conn.execute("UPDATE matches SET low_pri_pool = 1")
+    conn.commit()
+    conn.close()
+    page = c.get("/matches/115701682").text
+    assert "avg Ritualist 4 (1 of 6 ranked)" in page and "low-priority pool" in page
+    assert page.count('<span class="muted">now</span>') == 1

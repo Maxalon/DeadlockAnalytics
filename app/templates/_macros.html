@@ -19,6 +19,31 @@
   <span class="player-line">{% if p.avatar_url %}<img class="avatar" src="{{ p.avatar_url }}" alt="" width="18" height="18" loading="lazy">{% endif %}<a href="{{ href }}"{% if p.account_id not in tracked %} rel="noreferrer"{% endif %}>{{ name }}</a></span>
 {%- endmacro %}
 
+{# A rank badge (tier*10 + subrank), e.g. 64 = Ritualist 4. #}
+{% macro badge_label(ranks, badge) -%}
+  {%- set r = ranks.get(badge // 10) -%}
+  {{ r.name if r else "Tier " ~ (badge // 10) }}{% if badge % 10 %} {{ badge % 10 }}{% endif %}
+{%- endmacro %}
+
+{% macro skill(ranks, badge, title, note="") -%}
+  {%- set r = ranks.get(badge // 10) -%}
+  <span class="skill" title="{{ title }}">{% if r and r.image_url %}<img src="{{ r.image_url }}" alt="" width="16" height="16" loading="lazy">{% endif %}{{ badge_label(ranks, badge) }}{% if note %} <span class="muted">{{ note }}</span>{% endif %}</span>
+{%- endmacro %}
+
+{# A player's rank in a match: the one they entered it with (ranked), the one looked up right
+   after it, or failing both their rank now. #}
+{% macro player_skill(ranks, p) -%}
+  {%- if p.badge and p.badge_source == "match" -%}
+    {{ skill(ranks, p.badge, "Rank going into this match") }}
+  {%- elif p.badge -%}
+    {{ skill(ranks, p.badge, "Their rank from their latest ranked match, looked up within two days of this one") }}
+  {%- elif p.current_badge -%}
+    {{ skill(ranks, p.current_badge, "Their rank now, after their latest ranked match" ~ (" (" ~ (p.current_badge_at|dt) ~ ")" if p.current_badge_at else "") ~ "; not known at the time of this match", "now") }}
+  {%- elif p.current_badge == 0 -%}
+    <span class="skill muted" title="No ranked match known for this player">no rank</span>
+  {%- endif -%}
+{%- endmacro %}
+
 {% macro score(v) -%}
   {%- if v is none %}<span class="muted">—</span>{% else %}<span class="{{ 'pos' if v >= 0 else 'neg' }}">{{ "%+.2f"|format(v) }}</span>{% endif -%}
 {%- endmacro %}

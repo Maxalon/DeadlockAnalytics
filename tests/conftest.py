@@ -44,8 +44,11 @@ def insert_snapshot(conn, rows, window_end=1791900000):
 class FakeApi:
     """Stands in for DeadlockApi; records calls."""
 
-    def __init__(self, pages=None, baseline_pages=None):
+    def __init__(self, pages=None, baseline_pages=None, profiles=None, badges=None):
         self.pages = list(pages or [])
+        self.profiles = profiles  # account ids deadlock-api has a profile for; None: all
+        self.badges = dict(badges or {})  # account_id -> (badge, start of their latest ranked match)
+        self.rank_calls = []
         self.baseline_pages = list(baseline_pages or [])
         self.calls = []
 
@@ -61,7 +64,26 @@ class FakeApi:
         ]
 
     def steam_profiles(self, ids):
-        return [{"account_id": i, "personaname": f"player{i}", "avatarmedium": None} for i in ids]
+        return [
+            {"account_id": i, "personaname": f"player{i}", "avatarmedium": None}
+            for i in ids
+            if self.profiles is None or i in self.profiles
+        ]
+
+    def player_ranks(self, ids):
+        self.rank_calls.append(list(ids))
+        out = []
+        for i in ids:
+            badge, at = self.badges.get(i, (0, None))
+            out.append({"account_id": i, "badge": badge, "last_match": {"start_time": at} if at else None})
+        return out
+
+    def ranks(self):
+        return [
+            {"tier": 0, "name": "Obscurus", "images": {}},
+            {"tier": 6, "name": "Ritualist", "images": {"large_webp": "https://example/r6.webp"}},
+            {"tier": 9, "name": "Phantom", "images": {}},
+        ]
 
 
 @pytest.fixture
@@ -90,6 +112,7 @@ class FakeFetcher:
         self.history_pages = []
         self.actions = []
         self.bot = {"logged_in": True, "incoming": [], "friends": [], "blocked": []}
+        self.steam_profiles = set()  # accounts Steam answers for
 
     def ensure_ready(self):
         from app.fetcher import FetcherError
@@ -121,6 +144,10 @@ class FakeFetcher:
             "salts_budget": budget,
             "history_budget": {**budget, "limit": 20, "remaining": 17},
         }
+
+    def profiles(self, ids):
+        self.profile_calls = getattr(self, "profile_calls", []) + [list(ids)]
+        return [{"account_id": i, "name": f"steam{i}", "avatar_url": None} for i in ids if i in self.steam_profiles]
 
     def friends(self):
         return self.bot

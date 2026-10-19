@@ -68,6 +68,10 @@ def baselines_for(conn: sqlite3.Connection, db_path: str, start_time: int) -> tu
     return _baselines(db_path, snap["snapshot_id"]), snap
 
 
+def ranks(conn: sqlite3.Connection) -> dict[int, sqlite3.Row]:
+    return {r["tier"]: r for r in conn.execute("SELECT * FROM ranks")}
+
+
 def heroes(conn: sqlite3.Connection) -> dict[int, sqlite3.Row]:
     return {r["hero_id"]: r for r in conn.execute("SELECT * FROM heroes")}
 
@@ -92,12 +96,22 @@ def match_players(conn: sqlite3.Connection, match_id: int) -> list[dict]:
     return [
         dict(r)
         for r in conn.execute(
-            """SELECT mp.*, p.persona_name, p.avatar_url FROM match_players mp
+            """SELECT mp.*, p.persona_name, p.avatar_url, p.badge AS current_badge, p.badge_at AS current_badge_at
+               FROM match_players mp
                LEFT JOIN players p ON p.account_id = mp.account_id
                WHERE mp.match_id = ? ORDER BY mp.team, mp.player_slot""",
             (match_id,),
         )
     ]
+
+
+def average_badge(badges: list[int]) -> int | None:
+    """Average of rank badges (tier*10 + subrank, subranks 1-6) on a contiguous scale, as Valve's
+    match files and deadlock-api average them."""
+    if not badges:
+        return None
+    avg = round(sum(b // 10 * 6 + b % 10 - 1 for b in badges) / len(badges))
+    return avg // 6 * 10 + avg % 6 + 1
 
 
 def scored_match(conn: sqlite3.Connection, db_path: str, match_id: int) -> dict | None:
@@ -126,9 +140,16 @@ def scored_match(conn: sqlite3.Connection, db_path: str, match_id: int) -> dict 
     model_check = None
     if snap and ranked:
         model_check = {"total": len(ranked), "agree": sum(p["mvp_rank"] == p["predicted_rank"] for p in ranked)}
+    # Each team's average rank over the players one is known for: the match's own if it is
+    # ranked, else the ranks looked up around it.
+    team_badges = {}
+    for team in (0, 1):
+        known = [p["badge"] for p in players if p["team"] == team and p["badge"]]
+        team_badges[team] = {"average": average_badge(known), "known": len(known)}
     return {
         "match": dict(match),
         "players": players,
+        "team_badges": team_badges,
         "snapshot": dict(snap) if snap else None,
         "model_check": model_check,
     }

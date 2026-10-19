@@ -30,6 +30,12 @@ const RELOGIN_DELAY_MS = 10 * 60 * 1000;
 const MAX_RELOGIN_DELAY_MS = 2 * 3600 * 1000;
 const KICKED = [SteamUser.EResult.LoggedInElsewhere, SteamUser.EResult.LogonSessionReplaced];
 
+function avatarUrl(user) {
+  const hash = Buffer.isBuffer(user.avatar_hash) ? user.avatar_hash.toString('hex') : '';
+  if (!hash || /^0+$/.test(hash)) return null; // Steam's default avatar
+  return `https://avatars.steamstatic.com/${hash}_medium.jpg`;
+}
+
 class GcError extends Error {
   constructor(code, message) {
     super(message || code);
@@ -205,6 +211,27 @@ class DeadlockGC extends EventEmitter {
     else if (action === 'block') await this.client.blockUser(steamID);
     else await this.client.unblockUser(steamID);
     this.log.info(`steam: ${action} ${accountId}`);
+  }
+
+  /**
+   * Steam names and avatars of any accounts, friends or not. Asked over the bot's ordinary
+   * Steam connection, not Deadlock's Game Coordinator, so it costs none of the daily budgets.
+   * Accounts Steam doesn't answer for in time are left out.
+   */
+  async profiles(accountIds) {
+    if (!this.loggedIn) throw new GcError('not_ready', 'the bot is not logged in to Steam');
+    const ids = accountIds.map((a) => SteamID.fromIndividualAccountID(a).getSteamID64());
+    try {
+      await this.client.getPersonas(ids);
+    } catch (err) {
+      // Times out as a whole if one account never answers; the others are in `users` anyway.
+      this.log.info(`steam: profile lookup incomplete (${err.message})`);
+    }
+    const users = this.client.users || {};
+    return accountIds.flatMap((accountId, i) => {
+      const u = users[ids[i]];
+      return u && u.player_name ? [{ account_id: accountId, name: u.player_name, avatar_url: avatarUrl(u) }] : [];
+    });
   }
 
   /** Decline every open friend request at once. */

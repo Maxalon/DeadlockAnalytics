@@ -36,7 +36,8 @@ const gc = new DeadlockGC({
   historyQuota: new RollingQuota({ file: config.historyQuotaFile, limit: config.historyPagesPerDay }),
 });
 const service = new Service({
-  gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl, saltsApi: config.saltsApi, apiKey: config.apiKey, log,
+  gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl, saltsApi: config.saltsApi, apiKey: config.apiKey,
+  contributeSalts: config.contributeSalts, log,
 });
 if (token) gc.start();
 

@@ -64,6 +64,11 @@ message CMsgMatchMetaData {
   optional uint64 match_id = 3;
 }
 
+// Only in ranked matches.
+message CMsgMatchPlayerRankData {
+  optional uint32 initial_display_rank = 1;  // the badge the player entered the match with: tier*10 + subrank
+}
+
 message CMsgMatchMetaDataContents {
   message PlayerStats {
     optional uint32 time_stamp_s = 1;
@@ -84,6 +89,7 @@ message CMsgMatchMetaDataContents {
     optional uint32 hero_id = 12;
     optional uint32 abandon_match_time_s = 23;
     optional uint32 mvp_rank = 28;
+    optional CMsgMatchPlayerRankData player_rank_data = 32;
   }
   message MatchInfo {
     optional uint32 duration_s = 1;
@@ -94,6 +100,10 @@ message CMsgMatchMetaDataContents {
     optional uint64 match_id = 6;
     optional uint32 game_mode = 9;
     optional uint32 match_mode = 10;
+    // Which matchmaking pool the match was made in.
+    optional bool is_high_skill_range_parties = 20;
+    optional bool low_pri_pool = 21;
+    optional bool new_player_pool = 22;
     optional uint32 average_badge_team0 = 23;
     optional uint32 average_badge_team1 = 24;
     optional bool not_scored = 27;  // e.g. someone left early: played out, but doesn't count

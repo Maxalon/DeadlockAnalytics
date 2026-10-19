@@ -23,6 +23,7 @@ function service({ salts, download }) {
     status: () => ({ gc_ready: true }),
     matchSalts: async (id, target) => { calls.salts += 1; calls.targets.push(target); return salts(id); },
     fullHistory: async () => ({ matches: [{ match_id: '115701682', hero_id: 3 }], complete: true }),
+    profiles: async (ids) => ids.map((id) => ({ account_id: id, name: `p${id}`, avatar_url: null })),
   };
   const fetchFn = async (url) => { calls.urls.push(url); return download(url); };
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
@@ -41,6 +42,31 @@ test('match: salts -> download from the replay cluster -> decoded, then cached',
   const second = await svc.handle('/matches/115701682');
   assert.deepStrictEqual(second.body, first.body);
   assert.strictEqual(calls.salts, 1); // served from the cache
+});
+
+test('a match cached by an older decoder is decoded again from its kept file, without salts', async () => {
+  const { svc, calls } = service({
+    salts: () => ({ cluster_id: 3, metadata_salt: 1234 }),
+    download: () => new Response(fixture),
+  });
+  await svc.handle('/matches/115701682');
+  const cached = path.join(svc.cacheDir, '115701682.json');
+  const { badge, ...old } = JSON.parse(fs.readFileSync(cached, 'utf8')).players[0];
+  fs.writeFileSync(cached, JSON.stringify({ match_id: 115701682, players: [old] })); // no `decoder`: version 1
+  const again = await svc.handle('/matches/115701682');
+  assert.strictEqual(again.body.players.length, 12);
+  assert.ok('badge' in again.body.players[0]);
+  assert.strictEqual(calls.salts, 1);
+  assert.strictEqual(JSON.parse(fs.readFileSync(cached, 'utf8')).decoder, again.body.decoder);
+});
+
+test('profiles: 1 to 100 SteamID3s', async () => {
+  const { svc } = service({ salts: () => null, download: () => null });
+  const res = await svc.handle('/profiles', 'GET', new URLSearchParams({ ids: '1,2,x' }));
+  assert.deepStrictEqual(res.body.profiles.map((p) => p.name), ['p1', 'p2']);
+  assert.strictEqual((await svc.handle('/profiles')).status, 400);
+  const many = Array.from({ length: 101 }, (_, i) => i + 1).join(',');
+  assert.strictEqual((await svc.handle('/profiles', 'GET', new URLSearchParams({ ids: many }))).status, 400);
 });
 
 test('match files Valve no longer has, and GC errors, become HTTP statuses', async () => {
@@ -147,6 +173,32 @@ test('a match deadlock-api is busy with is not asked about again before Retry-Af
   await svc.saltsFor(5);
   assert.strictEqual(asked(), 3);
   assert.strictEqual(calls.gc, 4);
+});
+
+test('salts the bot fetched are given to deadlock-api; ones from deadlock-api are not sent back', async () => {
+  const posts = [];
+  const make = (contributeSalts, api) => {
+    const gc = { matchSalts: async () => ({ cluster_id: 7, metadata_salt: 77, replay_salt: 78 }) };
+    const fetchFn = async (url, opts = {}) => {
+      if (opts.method === 'POST') { posts.push([url, JSON.parse(opts.body)]); return new Response('', { status: 200 }); }
+      return url.startsWith('https://dapi.test/') ? api() : new Response(fixture);
+    };
+    const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
+    return new Service({
+      gc, cacheDir, replayUrl: config.replayUrl, saltsApi: 'https://dapi.test', fetch: fetchFn, contributeSalts,
+      log: { info() {}, warn() {} },
+    });
+  };
+  const missing = () => Response.json({}, { status: 404 });
+  await make(true, missing).saltsFor(5);
+  await new Promise(setImmediate);
+  assert.deepStrictEqual(posts, [
+    ['https://dapi.test/v1/matches/salts', [{ match_id: 5, cluster_id: 7, metadata_salt: 77, replay_salt: 78 }]],
+  ]);
+  await make(true, () => Response.json({ cluster_id: 1, metadata_salt: 2 })).saltsFor(6);
+  await make(false, missing).saltsFor(7);
+  await new Promise(setImmediate);
+  assert.strictEqual(posts.length, 1);
 });
 
 test('steam=0 only uses salts deadlock-api has; pages limits the history', async () => {
