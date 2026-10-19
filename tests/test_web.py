@@ -332,7 +332,40 @@ def test_match_page_shows_parties_hero_records_and_its_notes_below_the_tables(
     conn.close()
     page = c.get("/matches/115701682").text
     assert page.count('class="party party-A"') == 2 and "· duo" in page
-    assert "4 on Apollo, 75% won · 10 total" in page and ">no earlier matches known<" in page
+    assert '4 on Apollo, 75% won · 10 total <span class="source">(deadlock-api)</span>' in page
+    assert ">no earlier matches known <span" in page
     assert "(1 of 12 here)" in page
     # the model notice sits with the other notes under the tables
     assert page.index("Our model agrees with Valve") > page.rindex("</table>")
+
+
+def test_hero_records_come_from_our_own_history_when_it_knows_more(tmp_path, match_payload, research_baselines):
+    from app import db
+
+    c, s = client(tmp_path)
+    seed(s, match_payload, research_baselines)
+    conn = db.connect(s.database_path)
+    me, apollo = 113956776, 894295721
+    # our history: two earlier Vindicta matches of the tracked player (one won, one not scored),
+    # one on another hero; deadlock-api only knows one of them
+    with db.transaction(conn):
+        for match_id, hero, won, not_scored in ((1, 3, True, 0), (2, 3, False, 0), (3, 3, True, 1), (4, 7, False, 0)):
+            conn.execute(
+                "INSERT INTO matches (match_id, start_time, duration_s, match_mode, game_mode, winning_team,"
+                " fetched_at, detailed, not_scored) VALUES (?, ?, 1800, 'Unranked', 'Normal', ?, 0, 0, ?)",
+                (match_id, 1791000000 + match_id, 0 if won else 1, not_scored),
+            )
+            conn.execute(
+                "INSERT INTO match_players (match_id, player_slot, account_id, team, hero_id, kills, deaths, assists,"
+                " net_worth) VALUES (?, ?, ?, 0, ?, 0, 0, 0, 0)",
+                (match_id, -me, me, hero),
+            )
+    api = FakeApi(hero_stats=[(me, 3, 1, 1, 1791000001), (apollo, 77, 4, 3, 1791000000)])
+    jobs.fetch_player_stats(conn, api, 115701682)
+    conn.close()
+    page = c.get("/matches/115701682").text
+    assert "2 on Vindicta, 50% won · 3 total</span>" in page  # ours: not-scored left out, no source mark
+    assert "4 on Apollo, 75% won · 4 total <span" in page  # we know none of Apollo's: deadlock-api's
+    # a history-only match shows the tracked player's record too
+    page = c.get("/matches/2").text
+    assert "1 on Vindicta, 100% won · 1 total" in page

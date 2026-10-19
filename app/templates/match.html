@@ -21,7 +21,8 @@
 <p>Only the tracked player's line from their match history is stored so far.</p>
 {% endif %}
 {% for p in players %}
-<p>{{ hero(heroes, p.hero_id) }} {{ player_line(p, tracked) }} · {{ "Win" if p.team == match.winning_team else "Loss" }} · {{ p.kills }} / {{ p.deaths }} / {{ p.assists }} · {{ p.net_worth|num }} souls</p>
+<p>{{ hero(heroes, p.hero_id) }} {{ player_line(p, tracked) }} · {{ "Win" if p.team == match.winning_team else "Loss" }} · {{ p.kills }} / {{ p.deaths }} / {{ p.assists }} · {{ p.net_worth|num }} souls
+  {%- set h = hero_record(heroes, p) %}{% if h|trim %} · {{ h }}{% endif %}</p>
 {% endfor %}
 {% else %}
 {% if match.not_scored %}<p class="muted">Not scored: played out, but it doesn't count (e.g. someone left early).</p>{% endif %}
@@ -70,7 +71,8 @@
   {% if snapshot %}Baselines: {{ snapshot.n_matches|num }} matches, {{ snapshot.window_start|dt }} → {{ snapshot.window_end|dt }}.{% else %}No baseline snapshot yet, so scores are blank.{% endif %}
   <a href="/model">How the score works</a>.</li>
   <li>Under each name: the player's rank going into the match (ranked matches), else their rank looked up right after it, else their rank now (“now”).</li>
-  <li>Hero games and win rate: the player's matches before this one, counted only from the matches deadlock-api has collected of them, which for most players is far from all (for tracked players, compare with their own pages). Treat them as a rough sample, not a record.</li>
+  <li>Hero games and win rate: the player's matches before this one (not-scored ones left out). Tracked players' come from this site's own stored history, as do anyone's this site has more matches of than deadlock-api.
+  The others, marked “(deadlock-api)”, are counted from the matches deadlock-api has collected of them, which for most players is far from all: a rough sample, not a record.</li>
   <li>Party letters (likely parties): Valve's match file doesn't record who queued together, so teammates who were Steam friends before the match started are shown as one party.
   Only public friend lists are known ({{ friends_known or 0 }} of {{ players|length }} here): a party where nobody's list is public is missed, and friends who were matched by chance would show as one.</li>
   <li>Names, ranks, friend lists and hero stats come from deadlock-api and Steam; looking them up costs none of the bot's Deadlock budget.</li>
