@@ -116,6 +116,43 @@ def average_badge(badges: list[int]) -> int | None:
     return avg // 6 * 10 + avg % 6 + 1
 
 
+def own_records(conn: sqlite3.Connection, match) -> dict[int, dict]:
+    """Each player's matches before this one in our own database: in all, on the hero they played
+    in it, and wins on it (not-scored matches left out, like in game). Complete for tracked
+    players, whose whole history is stored; for others only the matches they shared with one."""
+    rows = conn.execute(
+        """SELECT cur.account_id, COUNT(*) AS total, SUM(mp.hero_id = cur.hero_id) AS hero_matches,
+                  SUM(mp.hero_id = cur.hero_id AND mp.team = m.winning_team) AS hero_wins
+           FROM match_players cur
+           JOIN match_players mp ON mp.account_id = cur.account_id
+           JOIN matches m ON m.match_id = mp.match_id
+           WHERE cur.match_id = ? AND cur.account_id > 0 AND m.start_time < ? AND NOT IFNULL(m.not_scored, 0)
+           GROUP BY cur.account_id""",
+        (match["match_id"], match["start_time"]),
+    ).fetchall()
+    return {r["account_id"]: dict(r) for r in rows}
+
+
+def choose_records(players: list[dict], own: dict[int, dict]) -> None:
+    """Set each player's `record` (games before this match, in all and on their hero, and wins on
+    it) from whichever source knows more of their matches: our own database (always for tracked
+    players) or deadlock-api's collection (looked up once per match, see jobs.fetch_player_stats)."""
+    for p in players:
+        mine = own.get(p["account_id"])
+        api = p["total_matches"]
+        if mine and (api is None or mine["total"] >= api):
+            p["record"] = {**mine, "source": "ours"}
+        elif api is not None:
+            p["record"] = {
+                "total": api,
+                "hero_matches": p["hero_matches"],
+                "hero_wins": p["hero_wins"],
+                "source": "deadlock-api",
+            }
+        else:
+            p["record"] = None
+
+
 def parties(conn: sqlite3.Connection, match, players: list[dict]) -> tuple[dict[int, str], int]:
     """Who likely queued together: Valve's match file doesn't record parties, so teammates who
     were Steam friends before the match started count as one (the same rule deadlock-api uses).
@@ -180,6 +217,7 @@ def scored_match(conn: sqlite3.Connection, db_path: str, match_id: int) -> dict 
     model_check = None
     if snap and ranked:
         model_check = {"total": len(ranked), "agree": sum(p["mvp_rank"] == p["predicted_rank"] for p in ranked)}
+    choose_records(players, own_records(conn, match))
     party_of, friends_known = parties(conn, match, players)
     for p in players:
         p["party"] = party_of.get(p["account_id"])
