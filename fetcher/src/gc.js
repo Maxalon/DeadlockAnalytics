@@ -305,6 +305,7 @@ class DeadlockGC extends EventEmitter {
     const resp = await this._request(MSG.METADATA, proto.GetMatchMetaData, body, proto.GetMatchMetaDataResponse);
     if (resp.result === 5) {
       this._metadataPausedUntil = this.now() + this._metadataPause;
+      this.log.warn(`steam: match metadata rate-limited; pausing ${Math.round(this._metadataPause / 60000)} min, until ${new Date(this._metadataPausedUntil).toISOString()}`);
       this._metadataPause = Math.min(this._metadataPause * 2, MAX_METADATA_PAUSE_MS);
       throw new GcError('rate_limited', `Steam rate-limited match metadata requests; paused until ${new Date(this._metadataPausedUntil).toISOString()}`);
     }
