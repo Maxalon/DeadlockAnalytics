@@ -177,6 +177,25 @@ test('decline all open requests', async () => {
   gc.stop();
 });
 
+test('profiles of any accounts, over Steam itself rather than the GC; slow ones are left out', async () => {
+  const { client, gc } = await loggedIn({});
+  const asked = [];
+  client.getPersonas = async (ids) => {
+    asked.push(ids);
+    client.users[id64(7)] = { player_name: 'seven', avatar_hash: Buffer.from('ab'.repeat(20), 'hex') };
+    client.users[id64(8)] = { player_name: 'eight', avatar_hash: Buffer.alloc(20) };
+    throw new Error('Request timed out'); // account 9 never answered
+  };
+  const sentBefore = client.sent.length;
+  assert.deepStrictEqual(await gc.profiles([7, 8, 9]), [
+    { account_id: 7, name: 'seven', avatar_url: `https://avatars.steamstatic.com/${'ab'.repeat(20)}_medium.jpg` },
+    { account_id: 8, name: 'eight', avatar_url: null },
+  ]);
+  assert.deepStrictEqual(asked, [[id64(7), id64(8), id64(9)]]);
+  assert.strictEqual(client.sent.length, sentBefore); // nothing went to the GC
+  gc.stop();
+});
+
 test('friend actions need a Steam login', async () => {
   const gc = session(new FakeSteam());
   await assert.rejects(gc.friendAction(42, 'accept'), { code: 'not_ready' });

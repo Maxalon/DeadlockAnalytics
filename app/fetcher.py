@@ -55,6 +55,12 @@ class Fetcher:
             params["steam"] = 0
         return self._request("GET", f"/matches/{match_id}", params=params or None)
 
+    def profiles(self, account_ids: list[int]) -> list[dict]:
+        """Steam names and avatars ({account_id, name, avatar_url}) of up to 100 accounts, over the
+        bot's ordinary Steam connection: costs none of its Deadlock budgets."""
+        params = {"ids": ",".join(map(str, account_ids))}
+        return self._request("GET", "/profiles", params=params, timeout=30)["profiles"]
+
     def friends(self) -> dict:
         """The bot's open friend requests, friends and blocked accounts. Short timeout: a page waits on it."""
         return self._request("GET", "/friends", timeout=5)

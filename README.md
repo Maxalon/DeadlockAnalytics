@@ -35,7 +35,19 @@ the salts of most matches. The bot itself keeps to a daily budget per Steam acco
 deadlock-api's ingest tool (40 salts, 20 history pages per 24 h) and only spends it on request:
 a player's history when you press "Re-pull matches" (the newest page; all pages when the player
 is added), a match's file when you open a match that has no details yet. `/accounts` shows
-what's left.
+what's left. Salts the bot fetches are handed to deadlock-api in return (`CONTRIBUTE_SALTS=0`
+turns that off).
+
+Match pages show every player's Steam name, avatar and rank. Names come from deadlock-api,
+or for players it doesn't know yet from Steam through the bot's ordinary Steam connection (not
+Deadlock's Game Coordinator, so outside the daily budget). Ranks: the badge a player entered a
+ranked match with (from the match file); otherwise their rank after their latest ranked match
+from deadlock-api, kept on the match when looked up within two days of it, else shown as "now".
+Unranked matches carry no ranks of their own. The page also notes the matchmaking pool a match
+was made in (low-priority, new-player, high-skill parties), each player's games and win rate on
+their hero before the match (from deadlock-api's matches only, so a rough sample), and likely
+parties: Valve doesn't record who queued together, so teammates who were Steam friends before
+the match (public friend lists, via deadlock-api) are marked as a party.
 
 Accounts are added and removed at `/accounts` (SteamID3, SteamID64 or a
 `steamcommunity.com/profiles/…` link). There is no login, so run it on a private network or

@@ -14,12 +14,14 @@ const GAME_MODES = {
   0: 'Invalid', 1: 'Normal', 2: 'OneVsOneTest', 3: 'Sandbox', 4: 'StreetBrawl', 5: 'ExploreNYC', 6: 'Internal',
 };
 
-function averageBadge(a, b) {
-  // Same mapping deadlock-api uses: badges (tier*10 + subrank) onto a contiguous scale, averaged.
-  if (!a || !b) return null;
-  const flat = (x) => Math.floor(x / 10) * 6 + (x % 10);
-  const avg = Math.round((flat(a) + flat(b)) / 2);
-  return Math.floor(avg / 6) * 10 + (avg % 6);
+function averageBadge(...badges) {
+  // Badges (tier*10 + subrank) onto a contiguous scale, averaged. Subranks are 1-6, so e.g.
+  // Seeker 6 (26) and Acolyte 1 (31) are neighbours.
+  const known = badges.filter(Boolean);
+  if (!known.length) return null;
+  const flat = (x) => Math.floor(x / 10) * 6 + (x % 10) - 1;
+  const avg = Math.round(known.reduce((sum, x) => sum + flat(x), 0) / known.length);
+  return Math.floor(avg / 6) * 10 + (avg % 6) + 1;
 }
 
 function maxOf(stats, field) {
@@ -39,6 +41,24 @@ function decodeMetadataFile(file) {
   const contents = proto.toObject(proto.MatchMetaDataContents, proto.MatchMetaDataContents.decode(meta.match_details));
   const info = contents.match_info;
   if (!info || !info.players.length) throw new Error('metadata has no match info');
+  const players = info.players.map((p) => ({
+    account_id: p.account_id,
+    player_slot: p.player_slot,
+    team: TEAMS[p.team] ?? String(p.team),
+    hero_id: p.hero_id,
+    kills: p.kills,
+    deaths: p.deaths,
+    assists: p.assists,
+    net_worth: p.net_worth,
+    // The stats are cumulative snapshots over the match; the max is the final total.
+    max_player_damage: maxOf(p.stats, 'player_damage'),
+    max_boss_damage: maxOf(p.stats, 'boss_damage'),
+    max_teammate_healing: maxOf(p.stats, 'teammate_healing'),
+    mvp_rank: p.mvp_rank || null,
+    abandon_match_time_s: p.abandon_match_time_s,
+    // Ranked matches only: the badge the player entered the match with.
+    badge: (p.player_rank_data && p.player_rank_data.initial_display_rank) || null,
+  }));
   return {
     match_id: Number(info.match_id || meta.match_id),
     start_time: info.start_time,
@@ -46,24 +66,17 @@ function decodeMetadataFile(file) {
     winning_team: TEAMS[info.winning_team] ?? String(info.winning_team),
     match_mode: MATCH_MODES[info.match_mode] ?? String(info.match_mode),
     game_mode: GAME_MODES[info.game_mode] ?? String(info.game_mode),
-    average_badge: averageBadge(info.average_badge_team0, info.average_badge_team1),
+    // Valve's team averages are often left at 0 now; the players' own badges are there either way.
+    average_badge: info.average_badge_team0 && info.average_badge_team1
+      ? averageBadge(info.average_badge_team0, info.average_badge_team1)
+      : averageBadge(...players.map((p) => p.badge)),
+    average_badge_team0: info.average_badge_team0 || null,
+    average_badge_team1: info.average_badge_team1 || null,
+    low_pri_pool: info.low_pri_pool,
+    new_player_pool: info.new_player_pool,
+    is_high_skill_range_parties: info.is_high_skill_range_parties,
     not_scored: info.not_scored,
-    players: info.players.map((p) => ({
-      account_id: p.account_id,
-      player_slot: p.player_slot,
-      team: TEAMS[p.team] ?? String(p.team),
-      hero_id: p.hero_id,
-      kills: p.kills,
-      deaths: p.deaths,
-      assists: p.assists,
-      net_worth: p.net_worth,
-      // The stats are cumulative snapshots over the match; the max is the final total.
-      max_player_damage: maxOf(p.stats, 'player_damage'),
-      max_boss_damage: maxOf(p.stats, 'boss_damage'),
-      max_teammate_healing: maxOf(p.stats, 'teammate_healing'),
-      mvp_rank: p.mvp_rank || null,
-      abandon_match_time_s: p.abandon_match_time_s,
-    })),
+    players,
   };
 }
 

@@ -214,9 +214,19 @@ def create_app(
                 scheduler.request_match_details(match_id)
             fetching = scheduler.is_fetching_match(match_id)
             fetch_error = None if fetching or error is None else error[0]
-        if any(p["account_id"] > 0 and p["persona_name"] is None and p["avatar_url"] is None for p in data["players"]):
-            scheduler.request_player_names()  # shown on the next visit
-        return render(request, "match.html", tracked=tracked, fetching=fetching, fetch_error=fetch_error, **data)
+        unknown = [p for p in data["players"] if p["persona_name"] is None or p["current_badge"] is None]
+        need_stats = data["match"]["detailed"] and data["match"]["player_stats_at"] is None
+        if need_stats or any(p["account_id"] > 0 for p in unknown):
+            scheduler.request_player_info(match_id if need_stats else None)  # shown on the next visit
+        return render(
+            request,
+            "match.html",
+            tracked=tracked,
+            fetching=fetching,
+            fetch_error=fetch_error,
+            ranks=queries.ranks(db()),
+            **data,
+        )
 
     @app.get("/model", response_class=HTMLResponse)
     def model(request: Request):

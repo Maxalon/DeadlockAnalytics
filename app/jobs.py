@@ -33,6 +33,10 @@ def _unix(value) -> int:
     return int(datetime.fromisoformat(value).replace(tzinfo=UTC).timestamp())
 
 
+def _flag(value) -> int | None:
+    return None if value is None else int(value)
+
+
 def _team(value) -> int:
     return TEAMS[value] if isinstance(value, str) else int(value)
 
@@ -53,6 +57,8 @@ def player_row(match_id: int, p: dict) -> dict:
         "ally_healing": p["max_teammate_healing"],
         "mvp_rank": p.get("mvp_rank"),
         "abandon_time_s": p.get("abandon_match_time_s") or 0,
+        "badge": p.get("badge") or None,
+        "badge_source": "match" if p.get("badge") else None,
     }
 
 
@@ -60,12 +66,16 @@ def store_match(conn: sqlite3.Connection, m: dict) -> None:
     conn.execute(
         """INSERT INTO matches
              (match_id, start_time, duration_s, match_mode, game_mode, winning_team, average_badge, fetched_at,
-              not_scored)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              not_scored, average_badge_team0, average_badge_team1, low_pri_pool, new_player_pool, high_skill_parties)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(match_id) DO UPDATE SET start_time = excluded.start_time, duration_s = excluded.duration_s,
              match_mode = excluded.match_mode, game_mode = excluded.game_mode,
              winning_team = excluded.winning_team, average_badge = excluded.average_badge,
-             fetched_at = excluded.fetched_at, not_scored = excluded.not_scored, detailed = 1""",
+             fetched_at = excluded.fetched_at, not_scored = excluded.not_scored, detailed = 1,
+             average_badge_team0 = excluded.average_badge_team0, average_badge_team1 = excluded.average_badge_team1,
+             low_pri_pool = excluded.low_pri_pool, new_player_pool = excluded.new_player_pool,
+             high_skill_parties = excluded.high_skill_parties,
+             player_stats_at = NULL""",  # the player lines (with their stats) are replaced below
         (
             m["match_id"],
             _unix(m["start_time"]),
@@ -75,13 +85,27 @@ def store_match(conn: sqlite3.Connection, m: dict) -> None:
             _team(m["winning_team"]),
             m.get("average_badge"),
             int(time.time()),
-            None if m.get("not_scored") is None else int(m["not_scored"]),
+            _flag(m.get("not_scored")),
+            m.get("average_badge_team0") or None,
+            m.get("average_badge_team1") or None,
+            _flag(m.get("low_pri_pool")),
+            _flag(m.get("new_player_pool")),
+            _flag(m.get("is_high_skill_range_parties")),
         ),
+    )
+    # Ranks looked up while only the history line was stored (store_match replaces the lines).
+    known = dict(
+        conn.execute(
+            "SELECT account_id, badge FROM match_players WHERE match_id = ? AND badge_source = 'current'",
+            (m["match_id"],),
+        ).fetchall()
     )
     # Replaces history-only lines (negative slots) with the full match.
     conn.execute("DELETE FROM match_players WHERE match_id = ?", (m["match_id"],))
     for p in m["players"]:
         row = player_row(m["match_id"], p)
+        if row["badge"] is None and p["account_id"] in known:
+            row["badge"], row["badge_source"] = known[p["account_id"]], "current"
         conn.execute(
             f"INSERT OR REPLACE INTO match_players ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})",
             tuple(row.values()),
@@ -436,39 +460,149 @@ def refresh_heroes(conn: sqlite3.Connection, api: DeadlockApi) -> None:
             )
 
 
+def refresh_ranks(conn: sqlite3.Connection, api: DeadlockApi) -> None:
+    """Rank tier names and badge images."""
+    ranks = api.ranks()
+    with transaction(conn):
+        for r in ranks:
+            images = r.get("images") or {}
+            conn.execute(
+                "INSERT OR REPLACE INTO ranks (tier, name, image_url) VALUES (?, ?, ?)",
+                (r["tier"], r["name"], images.get("large_webp") or images.get("large")),
+            )
+
+
 PROFILE_BATCH = 100
 PROFILE_MAX_AGE_S = 30 * 86400
+# A player neither deadlock-api nor Steam had a profile for is asked about again after this:
+# deadlock-api only knows players from matches it has itself, so fresh ones show up later.
+PROFILE_MISS_RETRY_S = 86400
+RANK_MAX_AGE_S = 86400
+# A rank looked up this soon after a match is kept on the match as the player's rank in it:
+# unranked matches carry none, and ranks drift, so the lookup is only close enough right after.
+RANK_SNAPSHOT_WINDOW_S = 2 * 86400
 
 
-def refresh_player_names(conn: sqlite3.Connection, api: DeadlockApi, limit: int = 500) -> int:
-    """Steam names and avatars of the players in stored matches that have none yet (or a month
-    old ones), through deadlock-api's profile endpoint. Accounts Steam has no profile for are
-    remembered too, so they aren't asked for again every run. Returns profiles looked up."""
-    ids = [
+def _due_players(conn: sqlite3.Connection, stale: str, args: tuple, limit: int) -> list[int]:
+    """Players of stored matches matching `stale`, those of the most recent matches first."""
+    return [
         r[0]
         for r in conn.execute(
-            """SELECT DISTINCT mp.account_id FROM match_players mp
-               LEFT JOIN players p ON p.account_id = mp.account_id
-               WHERE mp.account_id > 0 AND (p.account_id IS NULL OR p.fetched_at < ?) LIMIT ?""",
-            (int(time.time()) - PROFILE_MAX_AGE_S, limit),
+            f"""SELECT mp.account_id FROM match_players mp
+                JOIN matches m ON m.match_id = mp.match_id
+                LEFT JOIN players p ON p.account_id = mp.account_id
+                WHERE mp.account_id > 0 AND ({stale})
+                GROUP BY mp.account_id ORDER BY MAX(m.start_time) DESC LIMIT ?""",
+            (*args, limit),
         )
     ]
+
+
+def refresh_player_names(
+    conn: sqlite3.Connection, api: DeadlockApi, fetcher: Fetcher | None = None, limit: int = 500
+) -> int:
+    """Steam names, avatars and public friend lists of the players in stored matches: those
+    without (or with a month old) profile, and those whose profile is older than one of their
+    matches, so friendships from before it are known (see `parties`). deadlock-api first;
+    whoever it doesn't know, the bot asks Steam for (its normal Steam connection, not the
+    rate-limited Game Coordinator), names and avatars only. Players neither has are retried a
+    day later. Returns profiles looked up."""
+    now = int(time.time())
+    ids = _due_players(
+        conn,
+        """p.account_id IS NULL OR p.fetched_at < ? OR (p.persona_name IS NULL AND p.fetched_at < ?)
+           OR (p.persona_name IS NOT NULL AND p.fetched_at < m.start_time)""",
+        (now - PROFILE_MAX_AGE_S, now - PROFILE_MISS_RETRY_S),
+        limit,
+    )
     for i in range(0, len(ids), PROFILE_BATCH):
         batch = ids[i : i + PROFILE_BATCH]
-        found = {p["account_id"]: p for p in api.steam_profiles(batch)}
+        profiles = [p for p in api.steam_profiles(batch) if p.get("personaname")]
+        found = {p["account_id"]: (p.get("personaname"), p.get("avatarmedium") or p.get("avatar")) for p in profiles}
+        friends = {p["account_id"]: p.get("friends") or [] for p in profiles}
+        missing = [a for a in batch if a not in found]
+        if missing and fetcher is not None:
+            try:
+                found.update({p["account_id"]: (p["name"], p["avatar_url"]) for p in fetcher.profiles(missing)})
+            except FetcherError as exc:
+                log.info("profiles of %d players not available from Steam now: %s", len(missing), exc)
         now = int(time.time())
         with transaction(conn):
             conn.executemany(
-                "INSERT OR REPLACE INTO players (account_id, persona_name, avatar_url, fetched_at) VALUES (?, ?, ?, ?)",
-                [
-                    (
-                        a,
-                        found.get(a, {}).get("personaname"),
-                        found.get(a, {}).get("avatarmedium") or found.get(a, {}).get("avatar"),
-                        now,
-                    )
-                    for a in batch
-                ],
+                """INSERT INTO players (account_id, persona_name, avatar_url, fetched_at) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(account_id) DO UPDATE SET persona_name = excluded.persona_name,
+                     avatar_url = excluded.avatar_url, fetched_at = excluded.fetched_at""",
+                [(a, *found.get(a, (None, None)), now) for a in batch],
+            )
+            for a, lst in friends.items():
+                conn.execute("DELETE FROM player_friends WHERE account_id = ?", (a,))
+                conn.executemany(
+                    "INSERT OR REPLACE INTO player_friends (account_id, friend_id, since) VALUES (?, ?, ?)",
+                    [(a, f["account_id"], _unix(f["friend_since"]) if f.get("friend_since") else None) for f in lst],
+                )
+                conn.execute("UPDATE players SET friends_public = ? WHERE account_id = ?", (int(bool(lst)), a))
+    return len(ids)
+
+
+def fetch_player_stats(conn: sqlite3.Connection, api: DeadlockApi, match_id: int) -> bool:
+    """How many matches each player of a match had played before it, in all and on the hero they
+    played, and how many of those they won: from the matches deadlock-api has of them, which
+    are far from all. Looked up once per match. Returns whether it was looked up now."""
+    match = conn.execute(
+        "SELECT start_time FROM matches WHERE match_id = ? AND detailed = 1 AND player_stats_at IS NULL", (match_id,)
+    ).fetchone()
+    if match is None:
+        return False
+    players = conn.execute(
+        "SELECT account_id, hero_id FROM match_players WHERE match_id = ? AND account_id > 0", (match_id,)
+    ).fetchall()
+    stats = api.player_hero_stats([p["account_id"] for p in players], max_unix_timestamp=match["start_time"] - 1)
+    totals, on_hero = defaultdict(int), {}
+    for s in stats:
+        totals[s["account_id"]] += s["matches_played"]
+        on_hero[(s["account_id"], s["hero_id"])] = (s["matches_played"], s["wins"])
+    with transaction(conn):
+        conn.executemany(
+            """UPDATE match_players SET hero_matches = ?, hero_wins = ?, total_matches = ?
+               WHERE match_id = ? AND account_id = ?""",
+            [
+                (*on_hero.get((a, p["hero_id"]), (0, 0)), totals[a], match_id, a)
+                for p in players
+                for a in [p["account_id"]]
+            ],
+        )
+        conn.execute("UPDATE matches SET player_stats_at = ? WHERE match_id = ?", (int(time.time()), match_id))
+    return True
+
+
+def refresh_player_ranks(conn: sqlite3.Connection, api: DeadlockApi, limit: int = 500) -> int:
+    """Each player's rank after their latest ranked match (deadlock-api), refreshed daily, those
+    of recent matches first. Players without a rank from the match itself also get it on their
+    matches from the last two days, as their rank at the time. Returns players looked up."""
+    now = int(time.time())
+    ids = _due_players(conn, "p.badge_fetched_at IS NULL OR p.badge_fetched_at < ?", (now - RANK_MAX_AGE_S,), limit)
+    for i in range(0, len(ids), PROFILE_BATCH):
+        batch = ids[i : i + PROFILE_BATCH]
+        ranks = {r["account_id"]: r for r in api.player_ranks(batch)}
+        now = int(time.time())
+        rows = []
+        for a in batch:
+            r = ranks.get(a) or {}
+            last = r.get("last_match") or {}
+            rows.append((a, r.get("badge") or 0, last.get("start_time") if r.get("badge") else None, now))
+        with transaction(conn):
+            conn.executemany(
+                """INSERT INTO players (account_id, fetched_at, badge, badge_at, badge_fetched_at)
+                   VALUES (?, 0, ?, ?, ?)
+                   ON CONFLICT(account_id) DO UPDATE SET badge = excluded.badge, badge_at = excluded.badge_at,
+                     badge_fetched_at = excluded.badge_fetched_at""",
+                rows,
+            )
+            conn.executemany(
+                """UPDATE match_players SET badge = ?, badge_source = 'current'
+                   WHERE account_id = ? AND badge IS NULL
+                     AND match_id IN (SELECT match_id FROM matches WHERE start_time >= ?)""",
+                [(badge, a, now - RANK_SNAPSHOT_WINDOW_S) for a, badge, _, _ in rows if badge],
             )
     return len(ids)
 

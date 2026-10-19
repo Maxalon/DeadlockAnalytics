@@ -33,7 +33,8 @@ class Scheduler:
         self._match_queue: dict[int, float] = {}
         self._match_running: int | None = None
         self.match_errors: dict[int, tuple[str, float]] = {}
-        self._names_wanted = threading.Event()  # a match page lacked player names
+        self._players_wanted = threading.Event()  # a match page lacked player names or ranks
+        self._stats_wanted: set[int] = set()  # matches whose players' hero stats a page lacked
         self._thread = threading.Thread(target=self._run, name="scheduler", daemon=True)
 
     def start(self) -> None:
@@ -71,7 +72,7 @@ class Scheduler:
             try:
                 jobs.fetch_match_details(conn, self.fetcher, match_id)
                 self.match_errors.pop(match_id, None)
-                self._refresh_player_names(conn)
+                self._refresh_players(conn)
             except FetcherError as exc:
                 log.info("details for match %s not available now: %s", match_id, exc)
                 self.match_errors[match_id] = (str(exc), time.time())
@@ -79,16 +80,30 @@ class Scheduler:
                 with self._lock:
                     self._match_running = None
 
-    def request_player_names(self) -> None:
-        self._names_wanted.set()
+    def request_player_info(self, match_id: int | None = None) -> None:
+        """Look up player names, ranks and friend lists; with `match_id`, also its players' hero stats."""
+        if match_id is not None:
+            with self._lock:
+                self._stats_wanted.add(match_id)
+        self._players_wanted.set()
         self._wake.set()
 
-    def _refresh_player_names(self, conn) -> None:
-        self._names_wanted.clear()
+    def _refresh_players(self, conn) -> None:
+        """Names, avatars and ranks of the players in stored matches; none of it costs the bot's
+        Deadlock budgets."""
+        self._players_wanted.clear()
         try:
-            jobs.refresh_player_names(conn, self.api)
+            jobs.refresh_player_names(conn, self.api, self.fetcher)
+            jobs.refresh_player_ranks(conn, self.api)
         except Exception as exc:
-            log.warning("player name refresh failed: %s", exc)
+            log.warning("player refresh failed: %s", exc)
+        with self._lock:
+            wanted, self._stats_wanted = self._stats_wanted, set()
+        for match_id in wanted:
+            try:
+                jobs.fetch_player_stats(conn, self.api, match_id)
+            except Exception as exc:
+                log.warning("hero stats of match %s failed: %s", match_id, exc)
 
     def is_syncing(self, account_id: int) -> bool:
         with self._lock:
@@ -122,12 +137,15 @@ class Scheduler:
         while not self._stop.is_set():
             try:
                 self._fetch_queued_matches(conn)
-                if self._names_wanted.is_set():
-                    self._refresh_player_names(conn)
+                if self._players_wanted.is_set():
+                    self._refresh_players(conn)
                 self._sync_pending_accounts(conn)
                 if self._due(conn, "heroes", 86400):
                     jobs.refresh_heroes(conn, self.api)
+                    jobs.refresh_ranks(conn, self.api)
                     jobs._record(conn, "heroes", int(time.time()), None)
+                elif not conn.execute("SELECT 1 FROM ranks LIMIT 1").fetchone():
+                    jobs.refresh_ranks(conn, self.api)  # databases from before ranks were stored
                 if self._due(conn, "baselines", self.settings.baseline_interval_s):
                     jobs.compute_baselines(conn, self.api, self.settings)
                 with self._lock:
@@ -136,7 +154,7 @@ class Scheduler:
                     continue  # an account re-pull arrived meanwhile; serve it first
                 if self.sync_requested.is_set() or self._due(conn, "sync", self.settings.sync_interval_s):
                     self.sync_requested.clear()
-                    self._refresh_player_names(conn)
+                    self._refresh_players(conn)
                     if self.fetcher is None:
                         jobs.sync_all_accounts(conn, self.api, self.settings)
                     else:

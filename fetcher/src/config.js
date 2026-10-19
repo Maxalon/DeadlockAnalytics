@@ -17,5 +17,7 @@ module.exports = {
   // SALTS_FROM_DEADLOCK_API=0 turns that off.
   saltsApi: process.env.SALTS_FROM_DEADLOCK_API === '0' ? '' : (process.env.DEADLOCK_API_BASE || 'https://api.deadlock-api.com'),
   apiKey: process.env.DEADLOCK_API_KEY || '',
+  // Give deadlock-api the salts the bot fetches, in return for using it. CONTRIBUTE_SALTS=0 turns it off.
+  contributeSalts: process.env.CONTRIBUTE_SALTS !== '0',
   replayUrl: (clusterId, matchId, salt) => `http://replay${clusterId}.valve.net/1422450/${matchId}_${salt}.meta.bz2`,
 };

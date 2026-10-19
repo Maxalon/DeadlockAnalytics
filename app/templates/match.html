@@ -1,11 +1,14 @@
 {% extends "base.html" %}
-{% from "_macros.html" import hero, rank_badge, rank_name, player_line, score %}
+{% from "_macros.html" import hero, rank_badge, rank_name, player_line, player_skill, badge_label, party_tag, hero_record, party_sizes, score %}
 {% block title %}Match {{ match.match_id }} · Deadlock Analytics{% endblock %}
 {% block head %}{% if fetching %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block content %}
 <section class="head">
   <h1>Match {{ match.match_id }}</h1>
-  <p class="muted">{{ match.start_time|dt }} · {{ match.match_mode }} · {{ match.duration_s|mins }}</p>
+  <p class="muted">{{ match.start_time|dt }} · {{ match.match_mode }} · {{ match.duration_s|mins }}
+    {%- if match.low_pri_pool %} · low-priority pool{% endif %}
+    {%- if match.new_player_pool %} · new-player pool{% endif %}
+    {%- if match.high_skill_parties %} · high-skill parties{% endif %}</p>
 </section>
 
 {% if not match.detailed %}
@@ -22,20 +25,21 @@
 {% endfor %}
 {% else %}
 {% if match.not_scored %}<p class="muted">Not scored: played out, but it doesn't count (e.g. someone left early).</p>{% endif %}
-{% if model_check %}
-<p class="model-check">{% if model_check.agree == model_check.total %}<span class="badge-dot"></span> Our model agrees with Valve on all {{ model_check.total }} ranks.
-{%- else %}Our model differs from Valve on {{ model_check.total - model_check.agree }} of {{ model_check.total }} players; its picks are noted under the ranks.{% endif %}</p>
-{% endif %}
 {% for team in (match.winning_team, 1 - match.winning_team) %}
 <section>
-  <h2>{{ "Winning team" if team == match.winning_team else "Losing team" }}</h2>
+  <h2>{{ "Winning team" if team == match.winning_team else "Losing team" }}
+    {%- set tb = team_badges[team] %}
+    {%- if tb.average %} <span class="muted small" title="Average over the players whose rank is known">· avg {{ badge_label(ranks, tb.average) }} ({{ tb.known }} of {{ players|selectattr("team", "equalto", team)|list|length }} ranked)</span>{% endif %}
+    {%- if tb.parties %} <span class="muted small" title="Likely parties: teammates who were Steam friends before the match (see below)">· {{ party_sizes(tb.parties) }}</span>{% endif %}</h2>
   <div class="scroll">
   <table class="match">
     <thead><tr><th>Player</th>{% for c in players[0].components %}<th class="num">{{ c.label }}</th>{% endfor %}<th class="num">Score</th><th title="Valve's MVP and Key Players. A dot on the badge: our model picked the same; otherwise its pick is noted below.">Rank</th></tr></thead>
     <tbody>
     {% for p in players|selectattr("team", "equalto", team)|sort(attribute="sort_score", reverse=true) %}
       <tr class="{{ 'tracked' if p.account_id in tracked }}">
-        <td>{{ hero(heroes, p.hero_id) }}<br>{{ player_line(p, tracked) }}</td>
+        <td>{{ hero(heroes, p.hero_id) }}<br>{{ player_line(p, tracked) }}{{ party_tag(p.party) }}
+          {%- set s = player_skill(ranks, p) %}{% if s|trim %}<br>{{ s }}{% endif %}
+          {%- set h = hero_record(heroes, p) %}{% if h|trim %}<br>{{ h }}{% endif %}</td>
         {% for c in p.components %}
         <td class="num" title="{% if c.z is not none %}hero mean {{ '%.1f'|format(c.mean) }}, SD {{ '%.1f'|format(c.sd) }}, z {{ '%+.2f'|format(c.z) }} × weight {{ c.weight }}{% endif %}">
           {{ c.value|num }}<br><span class="small">{{ score(c.contribution if c.z is not none else none) }}</span>
@@ -56,10 +60,19 @@
 {% endfor %}
 {% endif %}
 
-<p class="muted small">
-  Each cell: raw value, and below it the weighted hero-relative z-score it adds to the score (hover for the hero mean and SD).
-  Rank: Valve's MVP / Key Players; a dot on the badge means our model picked the same.
+<ul class="notes muted small">
+  {% if model_check %}
+  <li class="model-check">{% if model_check.agree == model_check.total %}<span class="badge-dot"></span> Our model agrees with Valve on all {{ model_check.total }} ranks.
+  {%- else %}Our model differs from Valve on {{ model_check.total - model_check.agree }} of {{ model_check.total }} players; its picks are noted under the ranks.{% endif %}</li>
+  {% endif %}
+  <li>Rank column: Valve's MVP / Key Players. A dot on the badge means our model picked the same; otherwise its pick is noted below the badge.</li>
+  <li>Each cell: raw value, and below it the weighted hero-relative z-score it adds to the score (hover for the hero mean and SD).
   {% if snapshot %}Baselines: {{ snapshot.n_matches|num }} matches, {{ snapshot.window_start|dt }} → {{ snapshot.window_end|dt }}.{% else %}No baseline snapshot yet, so scores are blank.{% endif %}
-  <a href="/model">How the score works</a>.
-</p>
+  <a href="/model">How the score works</a>.</li>
+  <li>Under each name: the player's rank going into the match (ranked matches), else their rank looked up right after it, else their rank now (“now”).</li>
+  <li>Hero games and win rate: the player's matches before this one, counted only from the matches deadlock-api has collected of them, which for most players is far from all (for tracked players, compare with their own pages). Treat them as a rough sample, not a record.</li>
+  <li>Party letters (likely parties): Valve's match file doesn't record who queued together, so teammates who were Steam friends before the match started are shown as one party.
+  Only public friend lists are known ({{ friends_known or 0 }} of {{ players|length }} here): a party where nobody's list is public is missed, and friends who were matched by chance would show as one.</li>
+  <li>Names, ranks, friend lists and hero stats come from deadlock-api and Steam; looking them up costs none of the bot's Deadlock budget.</li>
+</ul>
 {% endblock %}
