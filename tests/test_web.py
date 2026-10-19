@@ -166,7 +166,7 @@ def test_pages_render_with_history_only_matches(tmp_path, research_baselines):
     for url in ("/", "/accounts", "/players/113956776", "/matches/115701682"):
         assert c.get(url).status_code == 200, url
     player = c.get("/players/113956776").text
-    assert "details for 2 matches still to come" in player and "not scored" in player
+    assert "2 matches without details yet" in player and "not scored" in player
     assert "Only the tracked player" in c.get("/matches/115701682").text
 
 
@@ -202,3 +202,36 @@ def test_old_database_is_migrated_without_losing_matches(tmp_path, match_payload
     indexes = [r["name"] for r in conn.execute("PRAGMA index_list(match_players)")]
     assert "match_players_account" in indexes
     db.init(conn)  # idempotent
+
+
+def test_opening_a_match_without_details_queues_its_fetch(tmp_path):
+    from app import db
+
+    from .test_fetcher import history_entry
+
+    fetcher = FakeFetcher()
+    c, s = client(tmp_path, fetcher=fetcher)
+    conn = db.connect(s.database_path)
+    with db.transaction(conn):
+        conn.execute("INSERT INTO accounts (account_id, added_at) VALUES (113956776, 0)")
+        jobs.store_history_entry(conn, 113956776, history_entry(115701682))
+    conn.close()
+    sched = c.app.state.scheduler
+
+    page = c.get("/matches/115701682").text
+    assert sched.is_fetching_match(115701682) and "Fetching this match" in page and 'http-equiv="refresh"' in page
+    # viewing the player doesn't spend the bot's budget on its own
+    c.get("/players/113956776")
+    assert not sched.is_syncing(113956776)
+
+    # the bot can't right now: the reason is shown, and it isn't retried on every reload
+    sched._match_queue.clear()
+    sched.match_errors[115701682] = ("the bot's daily budget for match salts is used up", 4_000_000_000)
+    page = c.get("/matches/115701682").text
+    assert "budget for match salts is used up" in page and not sched.is_fetching_match(115701682)
+
+
+def test_accounts_page_shows_the_bots_budget(tmp_path):
+    c, _ = client(tmp_path, fetcher=FakeFetcher())
+    page = c.get("/accounts").text
+    assert "38/40 match details" in page and "17/20 history pulls" in page

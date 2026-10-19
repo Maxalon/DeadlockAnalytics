@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import hero, rank_badge, score %}
 {% block title %}Match {{ match.match_id }} · Deadlock Analytics{% endblock %}
+{% block head %}{% if fetching %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block content %}
 <section class="head">
   <h1>Match {{ match.match_id }}</h1>
@@ -8,7 +9,14 @@
 </section>
 
 {% if not match.detailed %}
-<p>Only the tracked player's line from their match history is stored so far: Steam limits how fast the bot may download match files. All players, damage, healing, MVP ranks and scores follow with one of the next syncs.</p>
+{% if fetching %}
+<p>Fetching this match's details… <span class="muted">(this page reloads itself)</span></p>
+{% elif fetch_error %}
+<p>Details can't be fetched right now: <span class="neg">{{ fetch_error }}</span></p>
+<p class="muted">Reload the page later to try again; they also come in on their own once deadlock-api has them.</p>
+{% else %}
+<p>Only the tracked player's line from their match history is stored so far.</p>
+{% endif %}
 {% for p in players %}
 <p>{{ hero(heroes, p.hero_id) }} · {{ "Win" if p.team == match.winning_team else "Loss" }} · {{ p.kills }} / {{ p.deaths }} / {{ p.assists }} · {{ p.net_worth|num }} souls{% if p.account_id in tracked %} · <a href="/players/{{ p.account_id }}">profile</a>{% endif %}</p>
 {% endfor %}

@@ -32,6 +32,12 @@
 {% if bot_enabled %}
 <h2 id="bot">Steam bot friends</h2>
 <p class="muted small">Players add the bot as a Steam friend so it can read their match history. Requests wait here until you handle them; the bot never accepts one on its own.</p>
+{% if bot_status and bot_status.salts_budget %}
+<p class="small">Steam budget left today:
+  {{ bot_status.salts_budget.remaining }}/{{ bot_status.salts_budget.limit }} match details{% if bot_status.salts_budget.next_free_at %} (next at {{ bot_status.salts_budget.next_free_at }}){% endif %},
+  {{ bot_status.history_budget.remaining }}/{{ bot_status.history_budget.limit }} history pulls{% if bot_status.history_budget.next_free_at %} (next at {{ bot_status.history_budget.next_free_at }}){% endif %}.
+  <span class="muted">Spent only when you re-pull a player or open a match without details; matches deadlock-api knows cost nothing.</span></p>
+{% endif %}
 {% if bot_error %}<p class="neg small">{{ bot_error }}</p>{% endif %}
 {% if bot %}
 <h3>Friend requests</h3>

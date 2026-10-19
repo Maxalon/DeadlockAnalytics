@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const config = require('./config');
 const { DeadlockGC } = require('./gc');
+const { RollingQuota } = require('./quota');
 const { Service } = require('./service');
 
 const log = {
@@ -29,7 +30,11 @@ const token = readToken();
 if (!token) {
   log.error(`no Steam login yet: run \`docker compose run --rm -it fetcher npm run login\` first (${config.refreshTokenFile})`);
 }
-const gc = new DeadlockGC({ refreshToken: token, saveRefreshToken: saveToken, log });
+const gc = new DeadlockGC({
+  refreshToken: token, saveRefreshToken: saveToken, log,
+  saltsQuota: new RollingQuota({ file: config.saltsQuotaFile, limit: config.saltsPerDay }),
+  historyQuota: new RollingQuota({ file: config.historyQuotaFile, limit: config.historyPagesPerDay }),
+});
 const service = new Service({
   gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl, saltsApi: config.saltsApi, apiKey: config.apiKey, log,
 });

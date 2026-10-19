@@ -12,7 +12,7 @@ const SALTS_API_BACKOFF_MS = 30 * 60 * 1000;
 
 const STATUS = {
   not_ready: 503, timeout: 504, private: 403, rate_limited: 429, invalid_match: 404, in_flight: 409, gc_error: 502,
-  bad_request: 400, conflict: 409,
+  bad_request: 400, conflict: 409, quota: 429, no_salts: 404,
 };
 
 class Service {
@@ -42,8 +42,9 @@ class Service {
     return { status: 200, body: this.gc.status() };
   }
 
-  async history(accountId) {
-    const { matches, complete } = await this.gc.fullHistory(accountId);
+  /** `pages`: how many history pages (each one Steam request) to follow; default all of them. */
+  async history(accountId, pages = undefined) {
+    const { matches, complete } = await this.gc.fullHistory(accountId, pages);
     return {
       status: 200,
       body: {
@@ -54,12 +55,13 @@ class Service {
     };
   }
 
-  async match(matchId, targetAccountId = null) {
+  /** `steam: false`: only salts deadlock-api already has; never spends the bot's Steam budget. */
+  async match(matchId, targetAccountId = null, { steam = true } = {}) {
     // Finished matches never change, so a decoded match is cached forever.
     const cached = path.join(this.cacheDir, `${matchId}.json`);
     if (fs.existsSync(cached)) return { status: 200, body: JSON.parse(fs.readFileSync(cached, 'utf8')) };
 
-    const salts = await this.saltsFor(matchId, targetAccountId);
+    const salts = await this.saltsFor(matchId, targetAccountId, { steam });
     const url = this.replayUrl(salts.cluster_id, matchId, salts.metadata_salt);
     const resp = await this.fetch(url);
     if (resp.status === 404) return { status: 404, body: { error: 'gone', message: `Valve no longer serves the files of match ${matchId}` } };
@@ -76,7 +78,7 @@ class Service {
    * great many matches and serves those freely (and fetches others with its own bots, under its own
    * limit), so ask it first and use the bot's quota only for what it can't give.
    */
-  async saltsFor(matchId, targetAccountId) {
+  async saltsFor(matchId, targetAccountId, { steam = true } = {}) {
     const retryAt = this._saltsApiRetryAt.get(matchId) || 0;
     if (this.saltsApi && this.now() >= retryAt) {
       try {
@@ -102,6 +104,7 @@ class Service {
         this.log.warn(`deadlock-api salts for ${matchId} failed (${err.message}); asking Steam`);
       }
     }
+    if (!steam) throw Object.assign(new Error(`deadlock-api has no salts for ${matchId} (yet)`), { code: 'no_salts' });
     return this.gc.matchSalts(matchId, targetAccountId);
   }
 
@@ -126,8 +129,13 @@ class Service {
       if (method !== 'GET') return { status: 405, body: { error: 'method_not_allowed' } };
       if (pathname === '/friends') return { status: 200, body: this.gc.friends() };
       if (pathname === '/health') return this.health();
-      if ((m = pathname.match(/^\/history\/(\d{1,10})$/))) return await this.history(Number(m[1]));
-      if ((m = pathname.match(/^\/matches\/(\d{1,15})$/))) return await this.match(Number(m[1]), account);
+      if ((m = pathname.match(/^\/history\/(\d{1,10})$/))) {
+        const pages = /^\d{1,3}$/.test(query.get('pages') || '') ? Math.max(Number(query.get('pages')), 1) : undefined;
+        return await this.history(Number(m[1]), pages);
+      }
+      if ((m = pathname.match(/^\/matches\/(\d{1,15})$/))) {
+        return await this.match(Number(m[1]), account, { steam: query.get('steam') !== '0' });
+      }
       if ((m = pathname.match(/^\/salts\/(\d{1,15})$/))) return await this.salts(Number(m[1]), account, query.get('force') === '1');
       return { status: 404, body: { error: 'not_found' } };
     } catch (err) {
