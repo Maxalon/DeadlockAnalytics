@@ -202,3 +202,28 @@ def test_old_database_is_migrated_without_losing_matches(tmp_path, match_payload
     indexes = [r["name"] for r in conn.execute("PRAGMA index_list(match_players)")]
     assert "match_players_account" in indexes
     db.init(conn)  # idempotent
+
+
+def test_chart_points_link_to_their_match_with_details():
+    from app import charts
+
+    def m(i, score, gap, rank=None):
+        return {
+            "match_id": 1000 + i,
+            "start_time": 1791848958 + i * 3600,
+            "hero_id": 3,
+            "won": i % 2 == 0,
+            "not_scored": 0,
+            "kills": 12,
+            "deaths": 2,
+            "assists": 21,
+            "score": score,
+            "mvp_gap": gap,
+            "mvp_rank": rank,
+        }
+
+    svg = str(charts.score_trend([m(0, 1.5, -0.5), m(1, 2.0, 0.0, 1), m(2, -1.0, None)], {3: "Vindicta"}))
+    assert svg.count('class="hit"') == 3
+    assert 'href="/matches/1001"' in svg and 'data-rank="MVP"' in svg
+    assert 'data-hero="Vindicta"' in svg and 'data-kda="12 / 2 / 21"' in svg and 'data-mvp="+2.00"' in svg
+    assert "<title>2026-10-12 23:49 UTC · Vindicta · Win" in svg  # native tooltip without JavaScript
