@@ -214,6 +214,8 @@ def create_app(
                 scheduler.request_match_details(match_id)
             fetching = scheduler.is_fetching_match(match_id)
             fetch_error = None if fetching or error is None else error[0]
+        if any(p["account_id"] > 0 and p["persona_name"] is None and p["avatar_url"] is None for p in data["players"]):
+            scheduler.request_player_names()  # shown on the next visit
         return render(request, "match.html", tracked=tracked, fetching=fetching, fetch_error=fetch_error, **data)
 
     @app.get("/model", response_class=HTMLResponse)

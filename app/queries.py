@@ -91,7 +91,12 @@ def accounts(conn: sqlite3.Connection) -> list[dict]:
 def match_players(conn: sqlite3.Connection, match_id: int) -> list[dict]:
     return [
         dict(r)
-        for r in conn.execute("SELECT * FROM match_players WHERE match_id = ? ORDER BY team, player_slot", (match_id,))
+        for r in conn.execute(
+            """SELECT mp.*, p.persona_name, p.avatar_url FROM match_players mp
+               LEFT JOIN players p ON p.account_id = mp.account_id
+               WHERE mp.match_id = ? ORDER BY mp.team, mp.player_slot""",
+            (match_id,),
+        )
     ]
 
 
@@ -115,7 +120,18 @@ def scored_match(conn: sqlite3.Connection, db_path: str, match_id: int) -> dict 
         )
         for i, p in enumerate(ranked, 1):
             p["team_rank"] = i
-    return {"match": dict(match), "players": players, "snapshot": dict(snap) if snap else None}
+    # Where Valve's MVP / Key Player ranks and the model's picks differ (only with baselines,
+    # without them the model has no opinion).
+    ranked = [p for p in players if p["mvp_rank"] or p["predicted_rank"]]
+    model_check = None
+    if snap and ranked:
+        model_check = {"total": len(ranked), "agree": sum(p["mvp_rank"] == p["predicted_rank"] for p in ranked)}
+    return {
+        "match": dict(match),
+        "players": players,
+        "snapshot": dict(snap) if snap else None,
+        "model_check": model_check,
+    }
 
 
 def player_matches(conn: sqlite3.Connection, db_path: str, account_id: int, limit: int, offset: int = 0) -> list[dict]:

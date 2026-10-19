@@ -436,6 +436,43 @@ def refresh_heroes(conn: sqlite3.Connection, api: DeadlockApi) -> None:
             )
 
 
+PROFILE_BATCH = 100
+PROFILE_MAX_AGE_S = 30 * 86400
+
+
+def refresh_player_names(conn: sqlite3.Connection, api: DeadlockApi, limit: int = 500) -> int:
+    """Steam names and avatars of the players in stored matches that have none yet (or a month
+    old ones), through deadlock-api's profile endpoint. Accounts Steam has no profile for are
+    remembered too, so they aren't asked for again every run. Returns profiles looked up."""
+    ids = [
+        r[0]
+        for r in conn.execute(
+            """SELECT DISTINCT mp.account_id FROM match_players mp
+               LEFT JOIN players p ON p.account_id = mp.account_id
+               WHERE mp.account_id > 0 AND (p.account_id IS NULL OR p.fetched_at < ?) LIMIT ?""",
+            (int(time.time()) - PROFILE_MAX_AGE_S, limit),
+        )
+    ]
+    for i in range(0, len(ids), PROFILE_BATCH):
+        batch = ids[i : i + PROFILE_BATCH]
+        found = {p["account_id"]: p for p in api.steam_profiles(batch)}
+        now = int(time.time())
+        with transaction(conn):
+            conn.executemany(
+                "INSERT OR REPLACE INTO players (account_id, persona_name, avatar_url, fetched_at) VALUES (?, ?, ?, ?)",
+                [
+                    (
+                        a,
+                        found.get(a, {}).get("personaname"),
+                        found.get(a, {}).get("avatarmedium") or found.get(a, {}).get("avatar"),
+                        now,
+                    )
+                    for a in batch
+                ],
+            )
+    return len(ids)
+
+
 def refresh_profiles(conn: sqlite3.Connection, api: DeadlockApi) -> None:
     ids = [r[0] for r in conn.execute("SELECT account_id FROM accounts")]
     profiles = api.steam_profiles(ids)
