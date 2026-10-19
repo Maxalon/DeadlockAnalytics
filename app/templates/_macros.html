@@ -66,6 +66,26 @@
   {%- endif -%}
 {%- endmacro %}
 
+{# A time the page's script shows in the viewer's own time zone (UTC without JavaScript). #}
+{% macro when(ts) -%}
+  <time datetime="{{ ts|iso }}" data-local>{{ ts|day }} UTC</time>
+{%- endmacro %}
+
+{# Compact games / win rate on the hero before this match, for a table cell. #}
+{% macro record_cell(heroes, p) -%}
+  {%- set r = p.record -%}
+  {%- if r -%}
+  {%- set h = heroes.get(p.hero_id) -%}
+  {%- set hero_name = h.name if h else "this hero" -%}
+  {%- set where = "this site's stored matches" if r.source == "ours" else "deadlock-api's partial data" -%}
+  <span class="rec" title="Before this match: {{ r.hero_matches or 0 }} on {{ hero_name }}{% if r.hero_matches %} ({{ r.hero_wins }} won){% endif %}, {{ r.total }} in all, from {{ where }}">
+    {%- if not r.total %}<span class="muted">no games</span>
+    {%- elif r.hero_matches %}{{ r.hero_matches }} <span class="muted">·</span> {{ (100 * r.hero_wins / r.hero_matches)|round|int }}%
+    {%- else %}<span class="muted">first</span>{% endif %}
+    {%- if r.source == "deadlock-api" %}<sup class="muted">*</sup>{% endif %}</span>
+  {%- endif -%}
+{%- endmacro %}
+
 {% macro score(v) -%}
   {%- if v is none %}<span class="muted">—</span>{% else %}<span class="{{ 'pos' if v >= 0 else 'neg' }}">{{ "%+.2f"|format(v) }}</span>{% endif -%}
 {%- endmacro %}

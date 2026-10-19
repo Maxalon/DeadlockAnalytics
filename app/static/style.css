@@ -56,6 +56,47 @@ tr.tracked td { background: var(--tracked); }
 .hero img { border-radius: 4px; }
 table.match td { vertical-align: middle; }
 .player-line { display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; font-size: .85rem; }
+.v-short { display: none; }
+.z { display: block; }
+.match-head h1 { margin-bottom: 4px; }
+.meta, .team-meta { display: flex; flex-wrap: wrap; gap: 4px 0; margin: 0; }
+.meta { color: var(--muted); }
+.meta > span + span::before, .team-meta > span + span::before { content: "·"; margin: 0 8px; color: var(--muted); }
+.meta .warn { color: var(--neg); }
+.team h2 { margin-bottom: 2px; }
+.team-meta { margin-bottom: 10px; min-height: 1em; }
+.rec sup { margin-left: 1px; }
+details.notes { margin-top: 16px; }
+details.notes summary { cursor: pointer; color: var(--muted); }
+details.notes ul { padding-left: 1.2em; }
+
+/* Below desktop width each player becomes a card:
+     hero / player .......... score  MVP
+     rank ............... on-hero record
+     K    A    D    Souls  Dmg  Obj        (value, then its share of the score) */
+@media (max-width: 960px) {
+  table.match, table.match tbody { display: block; }
+  table.match thead { display: none; }
+  table.match tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px 6px; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); }
+  table.match tbody tr:last-child { border-bottom: none; }
+  table.match td { padding: 0; border: none; }
+  table.match td.player-cell { grid-column: 1 / 5; grid-row: 1; min-width: 0; }
+  table.match .player-line { max-width: 100%; }
+  table.match .player-line a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.match tr.tracked { background: var(--tracked); }
+  table.match tr.tracked td { background: none; }
+  table.match td.score-cell { grid-column: 5; grid-row: 1; align-self: center; text-align: right; font-size: 1.05rem; }
+  table.match td.rank { grid-column: 6; grid-row: 1; align-self: center; text-align: right; white-space: normal; }
+  table.match td.skill-cell { grid-column: 1 / 4; grid-row: 2; }
+  table.match td.rec-cell { grid-column: 4 / 7; grid-row: 2; text-align: right; font-size: .82rem; }
+  table.match td.stat { grid-row: 3; text-align: center; margin-top: 4px; }
+  table.match td.stat::before { content: attr(data-label); display: block; font-size: .7rem; color: var(--muted); }
+  table.match .v-full { display: none; }
+  table.match .v-short { display: inline; }
+  table.match .z { font-size: .72rem; }
+  table.match .model-note { font-size: .7rem; }
+}
 .avatar { border-radius: 4px; flex: none; }
 .skill { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: .78rem; white-space: nowrap; }
 .skill img { flex: none; }
@@ -110,3 +151,27 @@ td.rank { white-space: nowrap; }
 @media (max-width: 640px) { .card dl { grid-template-columns: repeat(2, 1fr); } }
 td.actions { text-align: right; vertical-align: middle; }
 td.actions form { display: inline-block; margin: 2px 0 2px 10px; }
+
+/* Match list: the hero link stretches over its whole row. */
+table.matches tbody tr { position: relative; }
+table.matches tbody tr:hover td { background: var(--tracked); }
+.row-link { color: var(--text); }
+.row-link::after { content: ""; position: absolute; inset: 0; }
+table.matches td { vertical-align: middle; }
+@media (max-width: 640px) {
+  .hide-sm { display: none; }
+  /*  hero ........... result  score
+      date · mode .... K/D/A   MVP   */
+  table.matches, table.matches tbody { display: block; }
+  table.matches thead { display: none; }
+  table.matches tr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 2px 14px; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); align-items: center; }
+  table.matches tbody tr:last-child { border-bottom: none; }
+  table.matches td { padding: 0; border: none; }
+  table.matches .m-what { grid-column: 1; grid-row: 1 / 3; }
+  table.matches .m-result { grid-column: 2; grid-row: 1; }
+  table.matches .m-score { grid-column: 3; grid-row: 1; }
+  table.matches .m-kda { grid-column: 2; grid-row: 2; font-size: .85rem; }
+  table.matches .m-badge { grid-column: 3; grid-row: 2; text-align: right; }
+  .top nav { gap: 12px; font-size: .9rem; }
+}

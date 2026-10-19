@@ -72,6 +72,11 @@ def create_app(
     templates.env.filters["dt"] = lambda ts: (
         datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%d %H:%M UTC") if ts else "—"
     )
+    # Short date for lists; the page's script turns <time> elements into the viewer's local time.
+    templates.env.filters["day"] = lambda ts: datetime.fromtimestamp(ts, UTC).strftime("%b %-d, %H:%M") if ts else "—"
+    templates.env.filters["iso"] = lambda ts: datetime.fromtimestamp(ts, UTC).isoformat() if ts else ""
+    # 30419 -> 30.4k: compact numbers where space is short.
+    templates.env.filters["k"] = lambda v: "—" if v is None else f"{v / 1000:.1f}k" if abs(v) >= 10000 else f"{v:,.0f}"
     templates.env.filters["mins"] = lambda s: f"{s // 60}:{s % 60:02d}"
     templates.env.filters["num"] = lambda v: "—" if v is None else f"{v:,.0f}"
     templates.env.filters["signed"] = lambda v, d=2: "—" if v is None else f"{v:+.{d}f}"

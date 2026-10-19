@@ -283,10 +283,10 @@ def test_match_page_shows_player_names_and_where_the_model_agrees(tmp_path, matc
     page = c.get("/matches/115701682").text
     assert "player113956776" in page and 'href="/players/113956776"' in page
     assert "steamcommunity.com/profiles/[U:1:" in page  # untracked players link to Steam
-    assert ">Rank<" in page and ">Valve<" not in page and ">Model<" not in page
+    assert ">Rank<" in page and ">MVP<" in page and ">Valve<" not in page and ">Model<" not in page
     # research match: the model reproduces Valve's three ranks
     assert page.count("badge mvp agrees") + page.count("badge key agrees") == 3
-    assert "Our model agrees with Valve on all 3 ranks" in page and "model-note" not in page
+    assert "Our model agrees with Valve on all 3 MVP / Key Player picks" in page and "model-note" not in page
 
 
 def test_match_page_shows_each_players_rank_and_the_team_average(tmp_path, match_payload, research_baselines):
@@ -331,9 +331,13 @@ def test_match_page_shows_parties_hero_records_and_its_notes_below_the_tables(
     jobs.fetch_player_stats(conn, api, 115701682)
     conn.close()
     page = c.get("/matches/115701682").text
-    assert page.count('class="party party-A"') == 2 and "· duo" in page
-    assert '4 on Apollo, 75% won · 10 total <span class="source">(deadlock-api)</span>' in page
-    assert ">no earlier matches known <span" in page
+    assert page.count('class="party party-A"') == 2 and ">duo<" in page
+    assert "4 on Apollo (3 won), 10 in all, from deadlock-api" in page
+    assert '>4 <span class="muted">·</span> 75%<sup class="muted">*</sup>' in page  # * marks deadlock-api's
+    assert '<span class="muted">no games</span>' in page
+    # phone cards label each stat and show compact numbers; times are localised by the page
+    assert 'data-label="Souls"' in page and '<span class="v-short">30.4k</span>' in page
+    assert '<time datetime="2026-10-12T23:49:18+00:00" data-local>Oct 12, 23:49 UTC</time>' in page
     assert "(1 of 12 here)" in page
     # the model notice sits with the other notes under the tables
     assert page.index("Our model agrees with Valve") > page.rindex("</table>")
@@ -364,8 +368,9 @@ def test_hero_records_come_from_our_own_history_when_it_knows_more(tmp_path, mat
     jobs.fetch_player_stats(conn, api, 115701682)
     conn.close()
     page = c.get("/matches/115701682").text
-    assert "2 on Vindicta, 50% won · 3 total</span>" in page  # ours: not-scored left out, no source mark
-    assert "4 on Apollo, 75% won · 4 total <span" in page  # we know none of Apollo's: deadlock-api's
+    # ours: not-scored left out, no * mark
+    assert "2 on Vindicta (1 won), 3 in all, from this site" in page and "50%</span>" in page
+    assert "4 on Apollo (3 won), 4 in all, from deadlock-api" in page  # we know none of Apollo's
     # a history-only match shows the tracked player's record too
     page = c.get("/matches/2").text
     assert "1 on Vindicta, 100% won · 1 total" in page

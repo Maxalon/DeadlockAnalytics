@@ -20,5 +20,13 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // Times in the viewer's own time zone; the server writes UTC.
+    for (const t of document.querySelectorAll("time[data-local]")) {
+      const d = new Date(t.dateTime);
+      t.textContent = d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      t.title = d.toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" });
+    }
+  </script>
 </body>
 </html>
