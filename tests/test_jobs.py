@@ -223,3 +223,52 @@ def test_average_badge_keeps_subranks_one_to_six_apart():
     assert queries.average_badge([26, 26]) == 26
     assert queries.average_badge([26, 31]) == 31
     assert queries.average_badge([61, 66, 63]) == 63
+
+
+# Match 115701682: team 0 holds 110786971 and 1028417007 (friends 7 minutes before it started),
+# team 1 holds 925178794 and 894295721 (friends since 2022); 79553708 is on team 0.
+START = 1791848958
+
+
+def test_parties_are_teammates_who_were_friends_before_the_match(conn, stored_match):
+    api = FakeApi(
+        friends={
+            110786971: [(1028417007, "2026-10-12T23:41:55Z"), (79553708, "2026-10-13T08:00:00Z")],  # 2nd: after
+            925178794: [(894295721, "2022-05-26T19:41:19Z"), (113956776, "2020-01-01T00:00:00Z")],
+            894295721: [(110786971, "2020-01-01T00:00:00Z")],  # friends, but on the other team
+        }
+    )
+    jobs.refresh_player_names(conn, api)
+    match = conn.execute("SELECT * FROM matches").fetchone()
+    players = queries.match_players(conn, 115701682)
+    party_of, known = queries.parties(conn, match, players)
+    assert known == 3  # public friend lists
+    assert party_of[110786971] == party_of[1028417007]
+    assert 79553708 not in party_of  # befriended only after the match
+    # one friend list is enough, and friends of friends are one party: a trio
+    assert party_of[925178794] == party_of[894295721] == party_of[113956776] != party_of[110786971]
+    data = queries.scored_match(conn, ":memory:", 115701682)
+    assert data["team_badges"][0]["parties"] == [2] and data["team_badges"][1]["parties"] == [3]
+
+
+def test_profiles_are_looked_up_again_after_a_newer_match_for_its_friendships(conn, stored_match, monkeypatch):
+    _set_now(monkeypatch, START - 3600)  # profile from before the match
+    assert jobs.refresh_player_names(conn, FakeApi()) == 12
+    _set_now(monkeypatch, START + 3600)
+    assert jobs.refresh_player_names(conn, FakeApi()) == 12
+    assert jobs.refresh_player_names(conn, FakeApi()) == 0
+
+
+def test_hero_stats_before_the_match_once_per_match(conn, stored_match):
+    apollo = 894295721
+    api = FakeApi(
+        hero_stats=[(apollo, 77, 4, 3, START - 86400), (apollo, 3, 6, 1, START - 86400), (apollo, 77, 1, 1, START)]
+    )
+    assert jobs.fetch_player_stats(conn, api, 115701682)
+    assert api.hero_stats_calls[0][1] == START - 1  # only matches that started before this one
+    p = {x["account_id"]: x for x in queries.match_players(conn, 115701682)}
+    assert (p[apollo]["hero_matches"], p[apollo]["hero_wins"], p[apollo]["total_matches"]) == (4, 3, 10)
+    assert (p[79553708]["hero_matches"], p[79553708]["total_matches"]) == (0, 0)
+    assert not jobs.fetch_player_stats(conn, api, 115701682)  # once
+    jobs.store_match(conn, stored_match)  # player lines replaced: looked up again
+    assert jobs.fetch_player_stats(conn, api, 115701682)

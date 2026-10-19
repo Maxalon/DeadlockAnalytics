@@ -2,6 +2,8 @@
 
 import re
 import sqlite3
+import string
+from collections import Counter, defaultdict
 from functools import lru_cache
 
 from . import scoring
@@ -114,6 +116,44 @@ def average_badge(badges: list[int]) -> int | None:
     return avg // 6 * 10 + avg % 6 + 1
 
 
+def parties(conn: sqlite3.Connection, match, players: list[dict]) -> tuple[dict[int, str], int]:
+    """Who likely queued together: Valve's match file doesn't record parties, so teammates who
+    were Steam friends before the match started count as one (the same rule deadlock-api uses).
+    Only public friend lists are known, and one of the two suffices. Returns each partied
+    player's party letter (A, B, ... over the match) and how many players' lists are known."""
+    team = {p["account_id"]: p["team"] for p in players if p["account_id"] > 0}
+    if not team:
+        return {}, 0
+    marks = ",".join("?" * len(team))
+    pairs = conn.execute(
+        f"""SELECT account_id, friend_id FROM player_friends
+            WHERE account_id IN ({marks}) AND friend_id IN ({marks}) AND (since IS NULL OR since <= ?)""",
+        (*team, *team, match["start_time"]),
+    ).fetchall()
+    root = {a: a for a in team}
+
+    def find(a):
+        while root[a] != a:
+            root[a] = root[root[a]]
+            a = root[a]
+        return a
+
+    for a, b in pairs:
+        if team[a] == team[b]:
+            root[find(a)] = find(b)
+    groups = defaultdict(list)
+    for p in players:  # page order, so letters follow the table
+        if p["account_id"] in team:
+            groups[find(p["account_id"])].append(p["account_id"])
+    party_of = {}
+    for letter, members in zip(string.ascii_uppercase, (g for g in groups.values() if len(g) > 1), strict=False):
+        party_of.update(dict.fromkeys(members, letter))
+    known = conn.execute(
+        f"SELECT COUNT(*) FROM players WHERE friends_public = 1 AND account_id IN ({marks})", tuple(team)
+    ).fetchone()[0]
+    return party_of, known
+
+
 def scored_match(conn: sqlite3.Connection, db_path: str, match_id: int) -> dict | None:
     match = conn.execute("SELECT * FROM matches WHERE match_id = ?", (match_id,)).fetchone()
     if match is None:
@@ -140,16 +180,21 @@ def scored_match(conn: sqlite3.Connection, db_path: str, match_id: int) -> dict 
     model_check = None
     if snap and ranked:
         model_check = {"total": len(ranked), "agree": sum(p["mvp_rank"] == p["predicted_rank"] for p in ranked)}
+    party_of, friends_known = parties(conn, match, players)
+    for p in players:
+        p["party"] = party_of.get(p["account_id"])
     # Each team's average rank over the players one is known for: the match's own if it is
     # ranked, else the ranks looked up around it.
     team_badges = {}
     for team in (0, 1):
         known = [p["badge"] for p in players if p["team"] == team and p["badge"]]
-        team_badges[team] = {"average": average_badge(known), "known": len(known)}
+        sizes = sorted(Counter(p["party"] for p in players if p["team"] == team and p["party"]).values(), reverse=True)
+        team_badges[team] = {"average": average_badge(known), "known": len(known), "parties": sizes}
     return {
         "match": dict(match),
         "players": players,
         "team_badges": team_badges,
+        "friends_known": friends_known,
         "snapshot": dict(snap) if snap else None,
         "model_check": model_check,
     }

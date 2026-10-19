@@ -215,8 +215,9 @@ def create_app(
             fetching = scheduler.is_fetching_match(match_id)
             fetch_error = None if fetching or error is None else error[0]
         unknown = [p for p in data["players"] if p["persona_name"] is None or p["current_badge"] is None]
-        if any(p["account_id"] > 0 for p in unknown):
-            scheduler.request_player_info()  # shown on the next visit
+        need_stats = data["match"]["detailed"] and data["match"]["player_stats_at"] is None
+        if need_stats or any(p["account_id"] > 0 for p in unknown):
+            scheduler.request_player_info(match_id if need_stats else None)  # shown on the next visit
         return render(
             request,
             "match.html",

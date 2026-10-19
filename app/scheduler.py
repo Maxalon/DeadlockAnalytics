@@ -34,6 +34,7 @@ class Scheduler:
         self._match_running: int | None = None
         self.match_errors: dict[int, tuple[str, float]] = {}
         self._players_wanted = threading.Event()  # a match page lacked player names or ranks
+        self._stats_wanted: set[int] = set()  # matches whose players' hero stats a page lacked
         self._thread = threading.Thread(target=self._run, name="scheduler", daemon=True)
 
     def start(self) -> None:
@@ -79,7 +80,11 @@ class Scheduler:
                 with self._lock:
                     self._match_running = None
 
-    def request_player_info(self) -> None:
+    def request_player_info(self, match_id: int | None = None) -> None:
+        """Look up player names, ranks and friend lists; with `match_id`, also its players' hero stats."""
+        if match_id is not None:
+            with self._lock:
+                self._stats_wanted.add(match_id)
         self._players_wanted.set()
         self._wake.set()
 
@@ -92,6 +97,13 @@ class Scheduler:
             jobs.refresh_player_ranks(conn, self.api)
         except Exception as exc:
             log.warning("player refresh failed: %s", exc)
+        with self._lock:
+            wanted, self._stats_wanted = self._stats_wanted, set()
+        for match_id in wanted:
+            try:
+                jobs.fetch_player_stats(conn, self.api, match_id)
+            except Exception as exc:
+                log.warning("hero stats of match %s failed: %s", match_id, exc)
 
     def is_syncing(self, account_id: int) -> bool:
         with self._lock:

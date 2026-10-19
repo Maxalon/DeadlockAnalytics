@@ -313,3 +313,26 @@ def test_match_page_shows_each_players_rank_and_the_team_average(tmp_path, match
     page = c.get("/matches/115701682").text
     assert "avg Ritualist 4 (1 of 6 ranked)" in page and "low-priority pool" in page
     assert page.count('<span class="muted">now</span>') == 1
+
+
+def test_match_page_shows_parties_hero_records_and_its_notes_below_the_tables(
+    tmp_path, match_payload, research_baselines
+):
+    from app import db
+
+    c, s = client(tmp_path)
+    seed(s, match_payload, research_baselines)
+    conn = db.connect(s.database_path)
+    api = FakeApi(
+        friends={925178794: [(894295721, "2022-05-26T19:41:19Z")]},
+        hero_stats=[(894295721, 77, 4, 3, 1791000000), (894295721, 3, 6, 1, 1791000000)],
+    )
+    jobs.refresh_player_names(conn, api)
+    jobs.fetch_player_stats(conn, api, 115701682)
+    conn.close()
+    page = c.get("/matches/115701682").text
+    assert page.count('class="party party-A"') == 2 and "· duo" in page
+    assert "4 on Apollo, 75% won · 10 total" in page and ">no earlier matches known<" in page
+    assert "(1 of 12 here)" in page
+    # the model notice sits with the other notes under the tables
+    assert page.index("Our model agrees with Valve") > page.rindex("</table>")

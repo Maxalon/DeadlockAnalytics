@@ -44,7 +44,10 @@ Deadlock's Game Coordinator, so outside the daily budget). Ranks: the badge a pl
 ranked match with (from the match file); otherwise their rank after their latest ranked match
 from deadlock-api, kept on the match when looked up within two days of it, else shown as "now".
 Unranked matches carry no ranks of their own. The page also notes the matchmaking pool a match
-was made in (low-priority, new-player, high-skill parties).
+was made in (low-priority, new-player, high-skill parties), each player's games and win rate on
+their hero before the match (from deadlock-api's matches only, so a rough sample), and likely
+parties: Valve doesn't record who queued together, so teammates who were Steam friends before
+the match (public friend lists, via deadlock-api) are marked as a party.
 
 Accounts are added and removed at `/accounts` (SteamID3, SteamID64 or a
 `steamcommunity.com/profiles/…` link). There is no login, so run it on a private network or

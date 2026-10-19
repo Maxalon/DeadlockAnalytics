@@ -44,6 +44,25 @@
   {%- endif -%}
 {%- endmacro %}
 
+{% macro party_tag(letter) -%}
+  {%- if letter %} <span class="party party-{{ letter }}" title="Likely party {{ letter }}: Steam friends with a teammate since before the match">{{ letter }}</span>{% endif -%}
+{%- endmacro %}
+
+{% macro party_sizes(sizes) -%}
+  {%- for n in sizes %}{{ {2: "duo", 3: "trio"}.get(n, n ~ "-stack") }}{% if not loop.last %} + {% endif %}{% endfor -%}
+{%- endmacro %}
+
+{# Games and wins on the hero before this match, in deadlock-api's data. #}
+{% macro hero_record(heroes, p) -%}
+  {%- if p.total_matches is not none -%}
+  {%- set h = heroes.get(p.hero_id) -%}
+  <span class="record small muted" title="Before this match, in the matches deadlock-api has of this player (not all of them)">
+    {%- if not p.total_matches %}no earlier matches known
+    {%- elif p.hero_matches %}{{ p.hero_matches }} on {{ h.name if h else "this hero" }}, {{ (100 * p.hero_wins / p.hero_matches)|round|int }}% won · {{ p.total_matches }} total
+    {%- else %}0 on {{ h.name if h else "this hero" }} · {{ p.total_matches }} total{% endif %}</span>
+  {%- endif -%}
+{%- endmacro %}
+
 {% macro score(v) -%}
   {%- if v is none %}<span class="muted">—</span>{% else %}<span class="{{ 'pos' if v >= 0 else 'neg' }}">{{ "%+.2f"|format(v) }}</span>{% endif -%}
 {%- endmacro %}

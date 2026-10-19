@@ -44,11 +44,14 @@ def insert_snapshot(conn, rows, window_end=1791900000):
 class FakeApi:
     """Stands in for DeadlockApi; records calls."""
 
-    def __init__(self, pages=None, baseline_pages=None, profiles=None, badges=None):
+    def __init__(self, pages=None, baseline_pages=None, profiles=None, badges=None, friends=None, hero_stats=()):
         self.pages = list(pages or [])
         self.profiles = profiles  # account ids deadlock-api has a profile for; None: all
         self.badges = dict(badges or {})  # account_id -> (badge, start of their latest ranked match)
         self.rank_calls = []
+        self.friends = dict(friends or {})  # account_id -> [(friend_id, "2026-10-12T23:41:55Z"), ...]
+        self.hero_stats = list(hero_stats)  # (account_id, hero_id, matches_played, wins, start_time) per match
+        self.hero_stats_calls = []
         self.baseline_pages = list(baseline_pages or [])
         self.calls = []
 
@@ -65,10 +68,25 @@ class FakeApi:
 
     def steam_profiles(self, ids):
         return [
-            {"account_id": i, "personaname": f"player{i}", "avatarmedium": None}
+            {
+                "account_id": i,
+                "personaname": f"player{i}",
+                "avatarmedium": None,
+                "friends": [{"account_id": f, "friend_since": since} for f, since in self.friends.get(i, [])],
+            }
             for i in ids
             if self.profiles is None or i in self.profiles
         ]
+
+    def player_hero_stats(self, ids, max_unix_timestamp=None):
+        self.hero_stats_calls.append((list(ids), max_unix_timestamp))
+        out = {}
+        for a, h, n, w, start in self.hero_stats:
+            if a in ids and (max_unix_timestamp is None or start <= max_unix_timestamp):
+                row = out.setdefault((a, h), {"account_id": a, "hero_id": h, "matches_played": 0, "wins": 0})
+                row["matches_played"] += n
+                row["wins"] += w
+        return list(out.values())
 
     def player_ranks(self, ids):
         self.rank_calls.append(list(ids))

@@ -26,17 +26,22 @@ CREATE TABLE IF NOT EXISTS match_players (
     -- 'match': the badge the player entered this ranked match with (Valve's match file).
     -- 'current': their rank looked up within days of the match (unranked matches have none).
     badge_source     TEXT,
+    -- Before this match, in the matches deadlock-api has of the player (not all of them):
+    hero_matches     INTEGER,                     -- on this hero
+    hero_wins        INTEGER,
+    total_matches    INTEGER,                     -- on any hero
     PRIMARY KEY (match_id, player_slot)
 );
 """
 
-# matches' columns from Valve's match file added after the first release.
-MATCHMAKING_COLUMNS = (
+# matches' columns added after the first release.
+ADDED_MATCH_COLUMNS = (
     "average_badge_team0",
     "average_badge_team1",
     "low_pri_pool",
     "new_player_pool",
     "high_skill_parties",
+    "player_stats_at",
 )
 
 # match_players' columns before the badge ones, for rebuilding a table from the first release.
@@ -79,7 +84,8 @@ CREATE TABLE IF NOT EXISTS matches (
     average_badge_team1 INTEGER,
     low_pri_pool    INTEGER,
     new_player_pool INTEGER,
-    high_skill_parties INTEGER                    -- is_high_skill_range_parties
+    high_skill_parties INTEGER,                   -- is_high_skill_range_parties
+    player_stats_at INTEGER                       -- when the players' hero stats were looked up
 );
 """
     + MATCH_PLAYERS
@@ -114,7 +120,17 @@ CREATE TABLE IF NOT EXISTS players (
     -- Rank after their latest ranked match (deadlock-api); 0: none known.
     badge           INTEGER,
     badge_at        INTEGER,                      -- start of that ranked match
-    badge_fetched_at INTEGER
+    badge_fetched_at INTEGER,
+    friends_public  INTEGER                       -- 1: deadlock-api had a non-empty friend list
+);
+
+-- Public Steam friend lists (deadlock-api), to tell which players queued together: Valve's
+-- match file doesn't record parties.
+CREATE TABLE IF NOT EXISTS player_friends (
+    account_id      INTEGER NOT NULL,
+    friend_id       INTEGER NOT NULL,
+    since           INTEGER,                      -- unix seconds
+    PRIMARY KEY (account_id, friend_id)
 );
 
 CREATE TABLE IF NOT EXISTS heroes (
@@ -165,11 +181,11 @@ def init(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE matches ADD COLUMN detailed INTEGER NOT NULL DEFAULT 1")
     if "not_scored" not in match_columns:
         conn.execute("ALTER TABLE matches ADD COLUMN not_scored INTEGER")
-    for column in MATCHMAKING_COLUMNS:
+    for column in ADDED_MATCH_COLUMNS:
         if column not in match_columns:
             conn.execute(f"ALTER TABLE matches ADD COLUMN {column} INTEGER")
     player_columns = {r["name"] for r in conn.execute("PRAGMA table_info(players)")}
-    for column in ("badge", "badge_at", "badge_fetched_at"):
+    for column in ("badge", "badge_at", "badge_fetched_at", "friends_public"):
         if column not in player_columns:
             conn.execute(f"ALTER TABLE players ADD COLUMN {column} INTEGER")
     if any(r["name"] == "player_damage" and r["notnull"] for r in conn.execute("PRAGMA table_info(match_players)")):
@@ -185,9 +201,15 @@ def init(conn: sqlite3.Connection) -> None:
             "COMMIT;"
         )
     mp_columns = {r["name"] for r in conn.execute("PRAGMA table_info(match_players)")}
-    if "badge" not in mp_columns:
-        conn.execute("ALTER TABLE match_players ADD COLUMN badge INTEGER")
-        conn.execute("ALTER TABLE match_players ADD COLUMN badge_source TEXT")
+    for column, kind in (
+        ("badge", "INTEGER"),
+        ("badge_source", "TEXT"),
+        ("hero_matches", "INTEGER"),
+        ("hero_wins", "INTEGER"),
+        ("total_matches", "INTEGER"),
+    ):
+        if column not in mp_columns:
+            conn.execute(f"ALTER TABLE match_players ADD COLUMN {column} {kind}")
     conn.commit()
 
 
