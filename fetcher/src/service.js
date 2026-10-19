@@ -5,6 +5,10 @@ const path = require('node:path');
 const { decodeMetadataFile } = require('./metadata');
 
 const SALTS_TIMEOUT_MS = 15000;
+// deadlock-api answers 429/503 (its own Steam bots are busy, or our IP's 10-per-30-min share of
+// them is spent) for matches it hasn't got salts for yet. Asking again before Retry-After only
+// burns that share, so each such match waits that long (or this) before deadlock-api is asked again.
+const SALTS_API_BACKOFF_MS = 30 * 60 * 1000;
 
 const STATUS = {
   not_ready: 503, timeout: 504, private: 403, rate_limited: 429, invalid_match: 404, in_flight: 409, gc_error: 502,
@@ -21,8 +25,10 @@ class Service {
    * @param {string} [deps.apiKey]  deadlock-api key (X-API-KEY), optional
    * @param {typeof fetch} [deps.fetch]
    */
-  constructor({ gc, cacheDir, replayUrl, saltsApi = '', apiKey = '', fetch: fetchFn = fetch, log = console }) {
+  constructor({ gc, cacheDir, replayUrl, saltsApi = '', apiKey = '', fetch: fetchFn = fetch, log = console, now = Date.now }) {
     this.gc = gc;
+    this.now = now;
+    this._saltsApiRetryAt = new Map(); // match id -> when deadlock-api may be asked about it again
     this.saltsApi = saltsApi.replace(/\/$/, '');
     this.apiKey = apiKey;
     this.log = log;
@@ -71,7 +77,8 @@ class Service {
    * limit), so ask it first and use the bot's quota only for what it can't give.
    */
   async saltsFor(matchId, targetAccountId) {
-    if (this.saltsApi) {
+    const retryAt = this._saltsApiRetryAt.get(matchId) || 0;
+    if (this.saltsApi && this.now() >= retryAt) {
       try {
         const resp = await this.fetch(`${this.saltsApi}/v1/matches/${matchId}/salts`, {
           headers: this.apiKey ? { 'X-API-KEY': this.apiKey } : {},
@@ -79,9 +86,17 @@ class Service {
         });
         if (resp.ok) {
           const s = await resp.json();
-          if (s.cluster_id && s.metadata_salt) return { cluster_id: s.cluster_id, metadata_salt: s.metadata_salt };
+          if (s.cluster_id && s.metadata_salt) {
+            this._saltsApiRetryAt.delete(matchId);
+            return { cluster_id: s.cluster_id, metadata_salt: s.metadata_salt };
+          }
+        } else if (resp.status === 429 || resp.status === 503) {
+          const after = Number(resp.headers.get('retry-after'));
+          const wait = Number.isFinite(after) && after > 0 ? after * 1000 : SALTS_API_BACKOFF_MS;
+          this._saltsApiRetryAt.set(matchId, this.now() + wait);
+          this.log.info(`deadlock-api can't get salts for ${matchId} now (HTTP ${resp.status}); not asking it again for ${Math.round(wait / 60000)} min`);
         } else {
-          this.log.info(`deadlock-api has no salts for ${matchId} right now (HTTP ${resp.status}); asking Steam`);
+          this.log.info(`deadlock-api has no salts for ${matchId} (HTTP ${resp.status}); asking Steam`);
         }
       } catch (err) {
         this.log.warn(`deadlock-api salts for ${matchId} failed (${err.message}); asking Steam`);

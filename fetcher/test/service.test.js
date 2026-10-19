@@ -84,7 +84,7 @@ test('the account is passed on, and /salts asks the GC every time', async () => 
   assert.deepStrictEqual(calls.targets, [113956776, 113956776, null]);
 });
 
-function withSaltsApi(api) {
+function withSaltsApi(api, now = Date.now) {
   const calls = { gc: 0, urls: [], headers: [] };
   const gc = { matchSalts: async () => { calls.gc += 1; return { cluster_id: 7, metadata_salt: 77 }; } };
   const fetchFn = async (url, opts = {}) => {
@@ -98,7 +98,7 @@ function withSaltsApi(api) {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
   const svc = new Service({
     gc, cacheDir, replayUrl: config.replayUrl, saltsApi: 'https://dapi.test/', apiKey: 'k', fetch: fetchFn,
-    log: { info() {}, warn() {} },
+    log: { info() {}, warn() {} }, now,
   });
   return { svc, calls };
 }
@@ -128,4 +128,23 @@ test('when deadlock-api has no salts, is limited, or is down, the bot asks Steam
     assert.strictEqual(calls.gc, 1);
     assert.strictEqual(calls.urls.at(-1), 'http://replay7.valve.net/1422450/115701682_77.meta.bz2');
   }
+});
+
+test('a match deadlock-api is busy with is not asked about again before Retry-After; others are', async () => {
+  let t = 0;
+  const busy = () => new Response('{"status":503,"error":"Steam is busy"}', { status: 503, headers: { 'retry-after': '60' } });
+  const { svc, calls } = withSaltsApi(busy, () => t);
+  const asked = () => calls.urls.filter((u) => u.startsWith('https://dapi.test/')).length;
+  // the decoded match is cached by id, so use the salts step directly
+  await svc.saltsFor(5);
+  assert.strictEqual(asked(), 1);
+  t += 59_000;
+  await svc.saltsFor(5);
+  assert.strictEqual(asked(), 1); // still backing off: straight to the bot
+  await svc.saltsFor(6);
+  assert.strictEqual(asked(), 2); // other matches are still tried
+  t += 2_000;
+  await svc.saltsFor(5);
+  assert.strictEqual(asked(), 3);
+  assert.strictEqual(calls.gc, 4);
 });
