@@ -33,6 +33,16 @@ LABELS = {
     "objective_damage": "Objective damage",
 }
 
+# For table headers and narrow screens.
+SHORT_LABELS = {
+    "kills": "K",
+    "assists": "A",
+    "deaths": "D",
+    "net_worth": "Souls",
+    "player_damage_and_ally_healing": "Dmg",
+    "objective_damage": "Obj",
+}
+
 
 def stat_value(player, stat: str) -> float | None:
     """None when the stat isn't known yet (a match stored from the history only)."""
@@ -63,6 +73,10 @@ class Component:
     @property
     def label(self) -> str:
         return LABELS[self.stat]
+
+    @property
+    def short(self) -> str:
+        return SHORT_LABELS[self.stat]
 
 
 def components(player, baselines: dict[tuple[int, str], tuple[float, float]]) -> list[Component]:
