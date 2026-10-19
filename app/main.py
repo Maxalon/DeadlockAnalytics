@@ -195,7 +195,7 @@ def create_app(
             page=page,
             page_size=PAGE_SIZE,
             heroes_played=queries.hero_summary(db(), account_id),
-            chart=charts.score_trend(trend),
+            chart=charts.score_trend(trend, {h: r["name"] for h, r in queries.heroes(db()).items()}),
             syncing=account is not None and scheduler.is_syncing(account_id),
         )
 
