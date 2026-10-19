@@ -16,7 +16,7 @@
 {% macro player_line(p, tracked) -%}
   {%- set name = p.persona_name or p.account_id -%}
   {%- set href = "/players/" ~ p.account_id if p.account_id in tracked else "https://steamcommunity.com/profiles/[U:1:" ~ p.account_id ~ "]" -%}
-  <span class="player-line">{% if p.avatar_url %}<img class="avatar" src="{{ p.avatar_url }}" alt="" width="18" height="18" loading="lazy">{% endif %}<a href="{{ href }}"{% if p.account_id not in tracked %} rel="noreferrer"{% endif %}>{{ name }}</a></span>
+  <span class="player-line">{% if p.avatar_url %}<img class="avatar" src="{{ p.avatar_url }}" alt="" width="18" height="18" loading="lazy">{% endif %}<a href="{{ href }}" title="{{ name }}"{% if p.account_id not in tracked %} rel="noreferrer"{% endif %}>{{ name }}</a></span>
 {%- endmacro %}
 
 {# A rank badge (tier*10 + subrank), e.g. 64 = Ritualist 4. #}
