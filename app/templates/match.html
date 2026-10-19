@@ -41,14 +41,14 @@
   </p>
   <table class="match">
     <thead><tr>
-      <th>Player</th><th>Rank</th><th title="Games on this hero before this match, and the share won">On hero</th>
+      <th class="c-player">Player</th><th class="c-rank">Rank</th><th class="c-rec" title="Games on this hero before this match, and the share won">On hero</th>
       {%- for c in members[0].components %}<th class="num" title="{{ c.label }}">{{ c.short }}</th>{% endfor %}
-      <th class="num">Score</th><th title="Valve's MVP and Key Players">MVP</th>
+      <th class="num c-score">Score</th><th class="c-mvp" title="Valve's MVP and Key Players">MVP</th>
     </tr></thead>
     <tbody>
     {% for p in members|sort(attribute="sort_score", reverse=true) %}
       <tr class="{{ 'tracked' if p.account_id in tracked }}">
-        <td class="player-cell">{{ hero(heroes, p.hero_id) }}<br>{{ player_line(p, tracked) }}{{ party_tag(p.party) }}</td>
+        <td class="player-cell">{{ hero(heroes, p.hero_id) }}<div class="name-row">{{ player_line(p, tracked) }}{{ party_tag(p.party) }}</div></td>
         <td class="skill-cell">{{ player_skill(ranks, p) }}</td>
         <td class="rec-cell">{{ record_cell(heroes, p) }}</td>
         {% for c in p.components %}

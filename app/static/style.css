@@ -55,6 +55,20 @@ tr.tracked td { background: var(--tracked); }
 .hero { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .hero img { border-radius: 4px; }
 table.match td { vertical-align: middle; }
+/* Fixed column widths: a long name can't push the other columns around, and both teams' tables
+   line up. The stat columns share what's left. */
+table.match { table-layout: fixed; }
+table.match .c-player { width: 210px; }
+table.match .c-rank { width: 130px; }
+table.match .c-rec { width: 96px; }
+.rec { white-space: nowrap; }
+table.match .c-score { width: 70px; }
+table.match .c-mvp { width: 84px; }
+.name-row { display: flex; align-items: center; gap: 2px; min-width: 0; margin-top: 3px; }
+.name-row .player-line { min-width: 0; margin-top: 0; }
+.name-row .player-line a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name-row .party { flex: none; }
+td.player-cell .hero { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .player-line { display: inline-flex; align-items: center; gap: 6px; margin-top: 3px; font-size: .85rem; }
 .v-short { display: none; }
 .z { display: block; }
@@ -74,16 +88,15 @@ details.notes ul { padding-left: 1.2em; }
      hero / player .......... score  MVP
      rank ............... on-hero record
      K    A    D    Souls  Dmg  Obj        (value, then its share of the score) */
-@media (max-width: 960px) {
+@media (max-width: 1080px) {
   table.match, table.match tbody { display: block; }
+  table.match { max-width: 680px; }
   table.match thead { display: none; }
   table.match tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px 6px; padding: 10px 12px;
     border-bottom: 1px solid var(--border); }
   table.match tbody tr:last-child { border-bottom: none; }
   table.match td { padding: 0; border: none; }
   table.match td.player-cell { grid-column: 1 / 5; grid-row: 1; min-width: 0; }
-  table.match .player-line { max-width: 100%; }
-  table.match .player-line a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   table.match tr.tracked { background: var(--tracked); }
   table.match tr.tracked td { background: none; }
   table.match td.score-cell { grid-column: 5; grid-row: 1; align-self: center; text-align: right; font-size: 1.05rem; }
