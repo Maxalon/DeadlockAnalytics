@@ -29,6 +29,17 @@ const MAX_METADATA_PAUSE_MS = 4 * 3600 * 1000;
 const RELOGIN_DELAY_MS = 10 * 60 * 1000;
 const MAX_RELOGIN_DELAY_MS = 2 * 3600 * 1000;
 const KICKED = [SteamUser.EResult.LoggedInElsewhere, SteamUser.EResult.LogonSessionReplaced];
+// Errors only a new `npm run login` (or Steam support) fixes: the saved login is no good.
+const E = SteamUser.EResult;
+const NEEDS_LOGIN = [
+  E.InvalidPassword, E.AccessDenied, E.Expired, E.Revoked, E.AccountDisabled, E.AccountLogonDenied,
+  E.InvalidLoginAuthCode, E.AccountLoginDeniedNeedTwoFactor, E.TwoFactorCodeMismatch, E.InvalidSignature,
+  E.AccountLockedDown, E.Banned,
+];
+// Anything else (Steam unreachable, timed out, busy) is retried by logging on again after this,
+// doubled while it keeps failing.
+const RETRY_DELAY_MS = 60 * 1000;
+const MAX_RETRY_DELAY_MS = 30 * 60 * 1000;
 
 function avatarUrl(user) {
   const hash = Buffer.isBuffer(user.avatar_hash) ? user.avatar_hash.toString('hex') : '';
@@ -52,11 +63,13 @@ class DeadlockGC extends EventEmitter {
    * @param {(token: string) => void} opts.saveRefreshToken called when Steam renews the token
    * @param {() => number} [opts.now] injectable clock for tests
    * @param {number} [opts.reloginDelayMs] first wait before logging back on after being kicked
+   * @param {number} [opts.retryDelayMs] first wait before logging on again after Steam couldn't be reached
    * @param {import('./quota').RollingQuota} [opts.saltsQuota] daily budget for match salts
    * @param {import('./quota').RollingQuota} [opts.historyQuota] daily budget for match history pages
    */
   constructor({
     client, refreshToken, saveRefreshToken, log = console, now = Date.now, reloginDelayMs = RELOGIN_DELAY_MS,
+    retryDelayMs = RETRY_DELAY_MS,
     saltsQuota = null, historyQuota = null,
   }) {
     super();
@@ -78,6 +91,8 @@ class DeadlockGC extends EventEmitter {
     this._metadataPause = METADATA_PAUSE_MS;
     this._reloginDelay = reloginDelayMs;
     this._firstReloginDelay = reloginDelayMs;
+    this._retryDelay = retryDelayMs;
+    this._firstRetryDelay = retryDelayMs;
     this._reloginTimer = null;
     this._wire();
   }
@@ -111,6 +126,7 @@ class DeadlockGC extends EventEmitter {
       this.loggedIn = true;
       this.lastError = null;
       this._reloginDelay = this._firstReloginDelay;
+      this._retryDelay = this._firstRetryDelay;
       this.log.info(`steam: logged on as ${c.steamID && c.steamID.accountid}`);
       c.setPersona(SteamUser.EPersonaState.Online);
       c.gamesPlayed([APP_ID]);
@@ -162,9 +178,19 @@ class DeadlockGC extends EventEmitter {
         this._reloginTimer = setTimeout(() => this.start(), delay);
         return;
       }
-      // Fatal for this login (e.g. the refresh token was revoked): needs `npm run login` again.
-      this.lastError = err.message;
-      this.log.error(`steam: ${err.message}`);
+      if (NEEDS_LOGIN.includes(err.eresult)) {
+        // The saved login is no good (e.g. the refresh token was revoked): needs `npm run login` again.
+        this.lastError = `${err.message}; log the bot in again (npm run login)`;
+        this.log.error(`steam: ${this.lastError}`);
+        return;
+      }
+      // Steam couldn't be reached or didn't answer (steam-user has given up retrying by itself).
+      const delay = this._retryDelay;
+      this._retryDelay = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
+      this.lastError = `${err.message}; trying again in ${Math.max(1, Math.round(delay / 60000))} min`;
+      this.log.warn(`steam: ${this.lastError}`);
+      clearTimeout(this._reloginTimer);
+      this._reloginTimer = setTimeout(() => this.start(), delay);
     });
   }
 

@@ -275,6 +275,29 @@ test('thrown out by a logon elsewhere: logs back on later by itself', async () =
   gc.stop();
 });
 
+test('Steam unreachable (steam-user gave up, no result code): logs on again by itself, backing off', async () => {
+  const client = new FakeSteam();
+  const gc = session(client, { retryDelayMs: 20 });
+  gc.start();
+  await new Promise((r) => gc.once('ready', r));
+  client.emit('error', new Error('Request timed out')); // GetCMListForConnect failing 10 times
+  assert.strictEqual(gc.status().logged_in, false);
+  assert.match(gc.status().last_error, /Request timed out; trying again/);
+  await new Promise((r) => gc.once('ready', r));
+  assert.strictEqual(client.logons, 2);
+  assert.strictEqual(gc.status().last_error, null);
+  // a transport failure has a result code; also retried
+  client.emit('error', Object.assign(new Error('socket hang up'), { eresult: SteamUser.EResult.NoConnection }));
+  await new Promise((r) => gc.once('ready', r));
+  assert.strictEqual(client.logons, 3);
+  // a broken login is not retried
+  client.emit('error', Object.assign(new Error('Revoked'), { eresult: SteamUser.EResult.Revoked }));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.strictEqual(client.logons, 3);
+  assert.match(gc.status().last_error, /npm run login/);
+  gc.stop();
+});
+
 test('daily budgets: salts and history pages stop before Steam is asked once used up', async () => {
   const client = new FakeSteam({
     onMetadata: () => ({ result: 1, metadata_salt: 1, replay_group_id: 1 }),
