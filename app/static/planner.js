@@ -3,7 +3,12 @@
 // /gamedata.json (cached by the service worker, so it also works offline).
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = JSON.parse($("planner-state").textContent);
+  // Only integers get into the markup below, whatever the page's JSON holds.
+  const initial = JSON.parse($("planner-state").textContent) || {};
+  const state = {
+    hero: Number.isInteger(initial.hero) ? initial.hero : null,
+    items: (Array.isArray(initial.items) ? initial.items : []).map(Number).filter(Number.isInteger),
+  };
   const filter = { slot: "", tier: "", q: "" };
   let data = null;
   let items = new Map();
@@ -63,9 +68,9 @@
       const pay = it.cost - owned.reduce((a, c) => a + items.get(c).cost, 0);
       running += pay;
       const gone = s.gone.has(id);
-      return `<li class="slot-${it.slot}${gone ? " gone" : ""}">
-        <img class="item-icon slot-${it.slot}" src="${esc(it.image)}" alt="" width="32" height="32" loading="lazy">
-        <a href="/items/${id}">${esc(it.name)}</a>
+      return `<li class="slot-${esc(it.slot)}${gone ? " gone" : ""}">
+        <img class="item-icon slot-${esc(it.slot)}" src="${esc(it.image)}" alt="" width="32" height="32" loading="lazy">
+        <a href="/items/${Number(it.id)}">${esc(it.name)}</a>
         <span class="muted small">${gone ? "upgraded" : `${pay.toLocaleString()} · Σ ${running.toLocaleString()}`}</span>
         <span class="pl-actions"><button type="button" class="link" data-up="${i}" title="Buy earlier" ${i ? "" : "disabled"}>↑</button><button type="button" class="link" data-rm="${i}" title="Remove">✕</button></span>
       </li>`;
