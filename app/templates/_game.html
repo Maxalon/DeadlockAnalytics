@@ -7,7 +7,7 @@
 <div class="hero-grid">
   {% for h in heroes %}
   <a class="hero-tile{{ ' on' if selected == h.id }}" href="{{ href_prefix }}{{ h.id }}{{ suffix }}">
-    <img src="{{ h.card or h.icon }}" alt="" loading="lazy">{% if h.new %}<i class="badge-new">New</i>{% endif %}<span>{{ h.name }}</span>
+    <img src="{{ h.card or h.icon }}" alt="" loading="lazy"><span>{{ h.name }}</span>
   </a>
   {% endfor %}
 </div>

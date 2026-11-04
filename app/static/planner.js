@@ -326,7 +326,7 @@
 
   // ---- hero picker ----
   $("ed-hero").addEventListener("click", () => {
-    DL.sheet(`<h2 style="margin:0 12px 10px">Pick a hero</h2><div class="hero-pick">${DL.data.heroes.map((h) => `<button type="button" class="hero-tile${h.id === state.hero ? " on" : ""}" data-hero-pick="${h.id}" style="padding:0;cursor:pointer"><img src="${esc(h.card || h.icon)}" alt="" loading="lazy">${h.new ? '<i class="badge-new">New</i>' : ""}<span>${esc(h.name)}</span></button>`).join("")}</div>`, (sheet) => {
+    DL.sheet(`<h2 style="margin:0 12px 10px">Pick a hero</h2><div class="hero-pick">${DL.data.heroes.map((h) => `<button type="button" class="hero-tile${h.id === state.hero ? " on" : ""}" data-hero-pick="${h.id}" style="padding:0;cursor:pointer"><img src="${esc(h.card || h.icon)}" alt="" loading="lazy"><span>${esc(h.name)}</span></button>`).join("")}</div>`, (sheet) => {
       sheet.addEventListener("click", (e) => {
         const b = e.target.closest("[data-hero-pick]");
         if (!b) return;

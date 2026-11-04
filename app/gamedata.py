@@ -332,8 +332,8 @@ def heroes(heroes_raw: list[dict], items_raw: list[dict]) -> list[dict]:
     by_class = {i["class_name"]: i for i in items_raw}
     out = []
     for h in heroes_raw:
-        # New heroes stay flagged in_development for a while after release (Violet, Baba): keep
-        # every hero players can pick.
+        # Every hero players can pick. Not `in_development`: Valve leaves that flag on some
+        # released heroes (Violet, Baba) and off others (Nurse Harrow).
         if not h.get("player_selectable") or h.get("disabled"):
             continue
         slots = h.get("items") or {}
@@ -361,7 +361,6 @@ def heroes(heroes_raw: list[dict], items_raw: list[dict]) -> list[dict]:
             {
                 "id": h["id"],
                 "name": h["name"],
-                "new": bool(h.get("in_development")),
                 "panel": stat_panel(h, weapon_raw),
                 "background": images.get("background_image_webp") or images.get("background_image"),
                 "type": h.get("hero_type"),
@@ -427,7 +426,6 @@ def planner_json(data: dict, client_version: int | None) -> dict:
             {
                 "id": h["id"],
                 "name": h["name"],
-                "new": h["new"],
                 "icon": h["icon"],
                 "card": h["card"],
                 "investment": h["investment"],

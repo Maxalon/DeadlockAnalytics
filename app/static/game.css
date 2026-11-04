@@ -20,7 +20,6 @@
 .souls { color: var(--souls); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .souls::before { content: ""; display: inline-block; width: .7em; height: .7em; margin-right: .3em; border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, #c8fff2, var(--souls) 55%, #1d6e5d); vertical-align: -.05em; }
-.badge-new { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--gold); color: #1a1408; font-size: .68rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
 .inline-icon { height: 1.1em; vertical-align: -.2em; }
 .highlight, .inline-attribute-label { color: var(--gold); font-weight: 600; }
 .SpiritDamage, .inline-attribute-label.SpiritDamage { color: var(--spirit); }
@@ -117,7 +116,6 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .hero-tile img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
 .hero-tile span { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 5px; font: 700 .95rem/1 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .03em;
   background: linear-gradient(transparent, rgb(0 0 0 / .85)); color: #fff; }
-.hero-tile .badge-new { position: absolute; top: 6px; left: 6px; }
 .hero-tile:hover, .hero-tile.on { border-color: var(--gold); text-decoration: none; }
 
 .hero-banner { position: relative; display: grid; grid-template-columns: 120px 1fr; gap: 16px; align-items: end; padding: 16px; border-radius: 12px; overflow: hidden;
