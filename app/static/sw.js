@@ -2,6 +2,7 @@
 // versioned scripts and styles (?v=<hash>), fonts and item/hero images cache-first.
 const CACHE = "deadlock-v2";
 const IMAGES = "https://assets-bucket.deadlock-api.com/";
+const FONT_HOSTS = new Set(["fonts.gstatic.com", "fonts.googleapis.com"]);
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(
@@ -35,7 +36,7 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.href.startsWith(IMAGES) || url.hostname.endsWith("fonts.gstatic.com") || url.hostname === "fonts.googleapis.com") {
+  if (url.href.startsWith(IMAGES) || FONT_HOSTS.has(url.hostname)) {
     return e.respondWith(cacheFirst(req));
   }
   if (url.origin !== location.origin) return;
