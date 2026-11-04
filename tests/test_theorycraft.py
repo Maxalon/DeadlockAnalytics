@@ -338,7 +338,11 @@ def test_pick_player(tmp_path):
     r = c.get("/me?set=42&next=/planner", follow_redirects=False)
     assert r.headers["location"] == "/planner" and "me=42" in r.headers["set-cookie"]
     assert "tester" in c.get("/items").text  # shown in the nav
-    assert c.get("/me?set=42&next=//evil.example", follow_redirects=False).headers["location"] == "/"
+    evils = ("//evil.example", "/\t/evil.example", "/\\evil.example", "https://evil.example/x", "/a//b", "javascript:x")
+    for evil in evils:
+        assert c.get("/me", params={"set": 42, "next": evil}, follow_redirects=False).headers["location"] == "/", evil
+    for ok in ("/", "/heroes/13", "/players/42/builds", "/planner/"):
+        assert c.get("/me", params={"set": 42, "next": ok}, follow_redirects=False).headers["location"] == ok
     r = c.get("/me?set=7", follow_redirects=False)  # not a tracked player: forgotten, not set
     assert "me=42" not in r.headers.get("set-cookie", "")
 

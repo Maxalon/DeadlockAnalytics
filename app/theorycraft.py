@@ -6,10 +6,11 @@ people made in the game come live from deadlock-api's mirror of Valve's build br
 
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -22,6 +23,8 @@ from .fetcher import FetcherError
 from .gamedata import INVESTMENT, SLOTS, GameData
 
 log = logging.getLogger(__name__)
+# A path on this site: segments of plain characters, no empty segment (so never //).
+_LOCAL_PATH = re.compile(r"/(?:[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?)?")
 BUILD_SORTS = {
     "weekly_favorites": "Popular this week",
     "favorites": "Most favourited",
@@ -83,15 +86,21 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         return render(request, name, **ctx)
 
     def safe_next(next_url: str) -> str:
-        return next_url if next_url.startswith("/") and not next_url.startswith("//") and "\\" not in next_url else "/"
+        """Where to go after picking a player: a plain path on this site, nothing else (no other host,
+        no scheme, no //, backslashes or control characters a browser might read as one)."""
+        parts = urlsplit(next_url[:200])
+        if parts.scheme or parts.netloc or not _LOCAL_PATH.fullmatch(parts.path):
+            return "/"
+        return parts.path
 
     # ---- who's this? -------------------------------------------------------------------------
     @app.get("/me", response_class=HTMLResponse)
     def pick_player(request: Request, set: int | None = None, next: str = "/"):
         if set is not None:
             resp = RedirectResponse(safe_next(next), status_code=303)
-            if set and set in accounts_by_id():
-                resp.set_cookie("me", str(set), max_age=365 * 86400, samesite="lax")
+            account = accounts_by_id().get(set) if set else None
+            if account:  # the tracked account's own id, from the database
+                resp.set_cookie("me", str(int(account["account_id"])), max_age=365 * 86400, samesite="lax")
             else:
                 resp.delete_cookie("me")
             return resp
@@ -425,14 +434,16 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
 
     @app.post("/players/{account_id}/builds/refresh")
     def refresh_player_builds(account_id: int):
-        if account_id not in accounts_by_id():
+        account = accounts_by_id().get(account_id)
+        if not account:
             raise HTTPException(404)
+        page_url = f"/players/{int(account['account_id'])}/builds"  # from the database row
         try:
-            jobs.refresh_player_builds(db(), api, account_id, live=True)
+            jobs.refresh_player_builds(db(), api, account["account_id"], live=True)
         except httpx.HTTPError as exc:
             log.warning("live builds of %s failed: %s", account_id, exc)
-            return RedirectResponse(f"/players/{account_id}/builds?error={quote(API_DOWN)}", status_code=303)
-        return RedirectResponse(f"/players/{account_id}/builds", status_code=303)
+            return RedirectResponse(f"{page_url}?error={quote(API_DOWN)}", status_code=303)
+        return RedirectResponse(page_url, status_code=303)
 
     # ---- patches -----------------------------------------------------------------------------
     @app.get("/patches", response_class=HTMLResponse)
