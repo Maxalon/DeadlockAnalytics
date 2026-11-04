@@ -10,7 +10,8 @@ const SteamID = require('steamid');
 const proto = require('./proto');
 
 const APP_ID = 1422450;
-const MSG = { WELCOME: 4004, HELLO: 4006, HISTORY: 9112, METADATA: 9167 };
+const MSG = { WELCOME: 4004, HELLO: 4006, CONNECTION_STATUS: 4009, HISTORY: 9112, METADATA: 9167 };
+const HAVE_SESSION = 0; // GCConnectionStatus
 const HELLO_INTERVAL_MS = 5000;
 const REQUEST_TIMEOUT_MS = 20000;
 const READY_TIMEOUT_MS = 60000;
@@ -40,6 +41,12 @@ const NEEDS_LOGIN = [
 // doubled while it keeps failing.
 const RETRY_DELAY_MS = 60 * 1000;
 const MAX_RETRY_DELAY_MS = 30 * 60 * 1000;
+// Watchdog: without a GC session for this long, for no reason we're waiting out on purpose
+// (login needed, kicked, someone playing on the account), the session is wedged.
+const MAX_NOT_READY_MS = 15 * 60 * 1000;
+// Steam checks in a row that may fail before the connection counts as dead.
+const MAX_PROBE_FAILURES = 2;
+const PROBE_TIMEOUT_MS = 30 * 1000;
 
 function avatarUrl(user) {
   const hash = Buffer.isBuffer(user.avatar_hash) ? user.avatar_hash.toString('hex') : '';
@@ -94,6 +101,9 @@ class DeadlockGC extends EventEmitter {
     this._retryDelay = retryDelayMs;
     this._firstRetryDelay = retryDelayMs;
     this._reloginTimer = null;
+    this.notReadySince = now();
+    this._hold = null; // 'needs_login' | 'kicked': waiting on purpose, not stuck
+    this._probeFailures = 0;
     this._wire();
   }
 
@@ -116,6 +126,7 @@ class DeadlockGC extends EventEmitter {
       metadata_paused_until: this._metadataPausedUntil > this.now() ? new Date(this._metadataPausedUntil).toISOString() : null,
       salts_budget: this.saltsQuota ? this.saltsQuota.status() : null,
       history_budget: this.historyQuota ? this.historyQuota.status() : null,
+      not_ready_since: this.notReadySince ? new Date(this.notReadySince).toISOString() : null,
       last_error: this.lastError,
     };
   }
@@ -125,6 +136,9 @@ class DeadlockGC extends EventEmitter {
     c.on('loggedOn', () => {
       this.loggedIn = true;
       this.lastError = null;
+      this._hold = null;
+      this._probeFailures = 0;
+      this.notReadySince = this.now(); // the clock for a stuck session starts now
       this._reloginDelay = this._firstReloginDelay;
       this._retryDelay = this._firstRetryDelay;
       this.log.info(`steam: logged on as ${c.steamID && c.steamID.accountid}`);
@@ -136,13 +150,15 @@ class DeadlockGC extends EventEmitter {
       this.refreshToken = token;
       this.saveRefreshToken(token);
     });
-    c.on('receivedFromGC', (appid, msgType) => {
+    c.on('receivedFromGC', (appid, msgType, payload) => {
       if (appid === APP_ID && msgType === MSG.WELCOME && !this.ready) {
         this.ready = true;
+        this.notReadySince = null;
         clearInterval(this._helloTimer);
         this.log.info('gc: welcome received, ready');
         this.emit('ready');
       }
+      if (appid === APP_ID && msgType === MSG.CONNECTION_STATUS) this._connectionStatus(payload);
     });
     // Someone plays a game on the bot account elsewhere (e.g. its Steam client on a PC): that
     // ends our GC session. Never kick them; take Deadlock back once they've stopped.
@@ -155,6 +171,7 @@ class DeadlockGC extends EventEmitter {
       } else if (!blocked && this.playingElsewhere) {
         this.playingElsewhere = false;
         this.lastError = null;
+        this.notReadySince = this.now();
         this.log.info('steam: the other session stopped playing; resuming');
         c.gamesPlayed([APP_ID]);
         this._startHello();
@@ -172,6 +189,7 @@ class DeadlockGC extends EventEmitter {
         // The account logged on elsewhere. Come back later instead of fighting over it.
         const delay = this._reloginDelay;
         this._reloginDelay = Math.min(delay * 2, MAX_RELOGIN_DELAY_MS);
+        this._hold = 'kicked';
         this.lastError = `logged on elsewhere (${err.message}); logging back on in ${Math.round(delay / 60000)} min`;
         this.log.warn(`steam: ${this.lastError}`);
         clearTimeout(this._reloginTimer);
@@ -180,6 +198,7 @@ class DeadlockGC extends EventEmitter {
       }
       if (NEEDS_LOGIN.includes(err.eresult)) {
         // The saved login is no good (e.g. the refresh token was revoked): needs `npm run login` again.
+        this._hold = 'needs_login';
         this.lastError = `${err.message}; log the bot in again (npm run login)`;
         this.log.error(`steam: ${this.lastError}`);
         return;
@@ -267,6 +286,65 @@ class DeadlockGC extends EventEmitter {
     return incoming.length;
   }
 
+  /**
+   * The GC says our session changed: it restarts on game updates (GC_GOING_DOWN) and can drop
+   * sessions. Say hello again until it welcomes us back, as the game does.
+   */
+  _connectionStatus(payload) {
+    let status;
+    try {
+      status = proto.ConnectionStatus.decode(payload || Buffer.alloc(0)).status || HAVE_SESSION;
+    } catch {
+      return;
+    }
+    if (status === HAVE_SESSION) return;
+    this.log.warn(`gc: connection status ${status} (no session); saying hello again`);
+    if (!this.loggedIn || this.playingElsewhere) {
+      this._notReady();
+      return;
+    }
+    this.client.gamesPlayed([APP_ID]);
+    this._startHello();
+  }
+
+  /**
+   * Ask Steam itself (not the GC) something cheap. A dead connection that steam-user hasn't
+   * noticed shows up here: the bot looks logged on but nothing reaches it. Resolves to whether
+   * Steam answered; skipped (true) while not logged on.
+   */
+  async probeSteam() {
+    if (!this.loggedIn || !this.client.steamID) return true;
+    let timer;
+    try {
+      await Promise.race([
+        this.client.getPersonas([this.client.steamID]),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timed out')), PROBE_TIMEOUT_MS); }),
+      ]);
+      this._probeFailures = 0;
+      return true;
+    } catch (err) {
+      this._probeFailures += 1;
+      this.log.warn(`steam: liveness check failed (${err.message}), ${this._probeFailures} in a row`);
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Why the session looks wedged (a restart should fix it), or null if it is fine or we are
+   * waiting on purpose: a new login is needed, we were kicked and come back later, or someone
+   * plays on the account.
+   */
+  stuckReason(maxNotReadyMs = MAX_NOT_READY_MS) {
+    if (this._probeFailures >= MAX_PROBE_FAILURES) return `Steam stopped answering (${this._probeFailures} liveness checks failed)`;
+    if (this.ready || this._hold || this.playingElsewhere || this.notReadySince === null) return null;
+    const down = this.now() - this.notReadySince;
+    if (down < maxNotReadyMs) return null;
+    const why = this.lastError || (this.loggedIn ? 'the GC never welcomed us' : 'not logged on to Steam');
+    return `no GC session for ${Math.round(down / 60000)} min (${why})`;
+  }
+
   _startHello() {
     this._notReady();
     const payload = Buffer.from(proto.ClientHello.encode(proto.ClientHello.create(HELLO)).finish());
@@ -276,6 +354,7 @@ class DeadlockGC extends EventEmitter {
   }
 
   _notReady() {
+    if (this.ready || this.notReadySince === null) this.notReadySince = this.now();
     this.ready = false;
     clearInterval(this._helloTimer);
   }
@@ -389,4 +468,4 @@ class DeadlockGC extends EventEmitter {
   }
 }
 
-module.exports = { DeadlockGC, GcError, APP_ID, MSG };
+module.exports = { DeadlockGC, GcError, APP_ID, MSG, MAX_NOT_READY_MS };

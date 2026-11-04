@@ -69,6 +69,11 @@ The fetcher needs a Steam account with Deadlock access, logged in once with
 `docker compose run --rm -it fetcher npm run login`. Players then send it a friend request, which
 you accept, decline or block at `/accounts`; the bot never accepts one on its own.
 Until then the site falls back to deadlock-api, and `/accounts` shows which source each sync used.
+If the bot loses its game session (the Game Coordinator restarts on every game update) it says
+hello again until the GC takes it back; if it stays without one for 15 minutes, or Steam stops
+answering its checks, the fetcher exits and Docker's restart policy starts it fresh
+(`BOT_MAX_OFFLINE_MINUTES`). It doesn't while it waits for a new `npm run login` or for someone
+playing on the bot account.
 
 To keep the container up to date, either enable the systemd timer in `deploy/`, or use the
 optional `deploy` job in CI, which runs `deploy/remote-deploy.sh` on the host over SSH. That job

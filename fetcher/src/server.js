@@ -39,7 +39,23 @@ const service = new Service({
   gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl, saltsApi: config.saltsApi, apiKey: config.apiKey,
   contributeSalts: config.contributeSalts, log,
 });
-if (token) gc.start();
+if (token) {
+  gc.start();
+  // Watchdog: a wedged session (GC never came back after an update, Steam connection dead
+  // without steam-user noticing) is fixed by a fresh start, so exit and let Docker's restart
+  // policy start us again. Waits that a restart can't fix (login needed, someone playing on
+  // the account, kicked) don't count.
+  let ticks = 0;
+  setInterval(async () => {
+    if (++ticks % config.probeEveryMinutes === 0) await gc.probeSteam();
+    const reason = gc.stuckReason(config.maxNotReadyMinutes * 60000);
+    if (reason) {
+      log.error(`watchdog: ${reason}; exiting so the container restarts`);
+      gc.stop();
+      setTimeout(() => process.exit(1), 2000);
+    }
+  }, 60000).unref();
+}
 
 http.createServer(async (req, res) => {
   const { pathname, searchParams } = new URL(req.url, 'http://localhost');

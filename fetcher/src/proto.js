@@ -9,6 +9,7 @@ const type = (name) => root.lookupType(name);
 
 module.exports = {
   ClientHello: type('CMsgClientHello'),
+  ConnectionStatus: type('CMsgConnectionStatus'),
   GetMatchHistory: type('CMsgClientToGCGetMatchHistory'),
   GetMatchHistoryResponse: type('CMsgClientToGCGetMatchHistoryResponse'),
   GetMatchMetaData: type('CMsgClientToGCGetMatchMetaData'),

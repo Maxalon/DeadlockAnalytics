@@ -19,5 +19,9 @@ module.exports = {
   apiKey: process.env.DEADLOCK_API_KEY || '',
   // Give deadlock-api the salts the bot fetches, in return for using it. CONTRIBUTE_SALTS=0 turns it off.
   contributeSalts: process.env.CONTRIBUTE_SALTS !== '0',
+  // Watchdog: restart the fetcher after this long without a GC session (unless it waits on purpose,
+  // e.g. for a new login), and check every this many minutes that Steam still answers.
+  maxNotReadyMinutes: Number(process.env.BOT_MAX_OFFLINE_MINUTES || 15),
+  probeEveryMinutes: Math.max(1, Number(process.env.BOT_PROBE_MINUTES || 5)),
   replayUrl: (clusterId, matchId, salt) => `http://replay${clusterId}.valve.net/1422450/${matchId}_${salt}.meta.bz2`,
 };

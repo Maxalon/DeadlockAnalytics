@@ -11,6 +11,12 @@ message CMsgClientHello {
   optional uint32 engine = 7;          // ESourceEngine; 1 = k_ESE_Source2
 }
 
+// k_EMsgGCClientConnectionStatus = 4009: the GC tells the client its session state changed,
+// e.g. it is restarting for a game update (GC_GOING_DOWN) or lost our session (NO_SESSION).
+message CMsgConnectionStatus {
+  optional uint32 status = 1; // GCConnectionStatus; 0 = HAVE_SESSION
+}
+
 // k_EMsgClientToGCGetMatchHistory = 9112, response 9113
 message CMsgClientToGCGetMatchHistory {
   optional uint32 account_id = 1;
