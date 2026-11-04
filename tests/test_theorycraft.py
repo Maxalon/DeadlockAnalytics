@@ -399,3 +399,14 @@ def test_clean_html_inline_icons_and_placeholders():
         f'Empower (Ability 1): <img class="inline-icon" src="{cdn}" alt="">&lt;img src="https://evil.example/x.png"&gt;'
     )
     assert out == expected
+
+
+def test_gamedata_etag_follows_the_content(conn, monkeypatch):
+    # Same game data, but the code that shapes it changed (e.g. a hero filter fix): phones must
+    # get the new JSON instead of a 304 for their old copy.
+    jobs.refresh_game_data(conn, GameApi())
+    before = gamedata.GameData().get(conn)
+    assert gamedata.GameData().get(conn)["etag"] == before["etag"]  # stable while nothing changes
+    original = gamedata.planner_json
+    monkeypatch.setattr(gamedata, "planner_json", lambda d, v: {**original(d, v), "extra": 1})
+    assert gamedata.GameData().get(conn)["etag"] != before["etag"]

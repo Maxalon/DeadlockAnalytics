@@ -146,10 +146,12 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         data = data_or_none()
         if not data:
             return JSONResponse({"error": "no game data yet"}, status_code=503)
-        etag = f'"{data["client_version"]}-{data["fetched_at"]}"'
+        etag = data["etag"]
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers={"ETag": etag})
-        return JSONResponse(data["planner"], headers={"ETag": etag, "Cache-Control": "no-cache"})
+        return Response(
+            data["planner_body"], media_type="application/json", headers={"ETag": etag, "Cache-Control": "no-cache"}
+        )
 
     # ---- build editor --------------------------------------------------------------------------
     def saved_list(account_id: int | None):
