@@ -6,6 +6,7 @@ whenever the game's client version changes (jobs.refresh_game_data). This module
 the small shapes the pages and planner.js need.
 """
 
+import hashlib
 import html
 import json
 import re
@@ -457,5 +458,9 @@ class GameData:
                 data["client_version"] = rows["items"]["client_version"]
                 data["fetched_at"] = rows["items"]["fetched_at"]
                 data["planner"] = planner_json(data, data["client_version"])
+                # Served as is; the ETag is its hash, so it changes when the game data or this
+                # code's output does (a deploy that changes what the editor gets reaches phones).
+                data["planner_body"] = json.dumps(data["planner"], separators=(",", ":")).encode()
+                data["etag"] = '"' + hashlib.sha256(data["planner_body"]).hexdigest()[:24] + '"'
                 self._data, self._key = data, key
             return self._data
