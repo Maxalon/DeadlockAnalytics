@@ -24,6 +24,8 @@ function service({ salts, download }) {
     matchSalts: async (id, target) => { calls.salts += 1; calls.targets.push(target); return salts(id); },
     fullHistory: async () => ({ matches: [{ match_id: '115701682', hero_id: 3 }], complete: true }),
     profiles: async (ids) => ids.map((id) => ({ account_id: id, name: `p${id}`, avatar_url: null })),
+    published: [],
+    async publishBuild(b) { this.published.push(b); return { hero_build_id: 42, version: 1 }; },
   };
   const fetchFn = async (url) => { calls.urls.push(url); return download(url); };
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetcher-'));
@@ -215,4 +217,18 @@ test('steam=0 only uses salts deadlock-api has; pages limits the history', async
   assert.strictEqual(asked, 1);
   await s2.handle('/history/5');
   assert.strictEqual(asked, undefined);
+});
+
+test('POST /builds publishes through the bot; a bad body is refused', async () => {
+  const { svc, gc } = service({ salts: () => ({}), download: () => new Response('') });
+  const body = { hero_id: 13, name: ' Haze ', description: 'd', details: { mod_categories: [], ability_order: { currency_changes: [] } } };
+  const ok = await svc.handle('/builds', 'POST', new URLSearchParams(), body);
+  assert.deepStrictEqual(ok, { status: 200, body: { hero_build_id: 42, version: 1 } });
+  assert.strictEqual(gc.published[0].name, 'Haze');
+  assert.strictEqual(gc.published[0].hero_build_id, undefined);
+  await svc.handle('/builds', 'POST', new URLSearchParams(), { ...body, hero_build_id: 42, version: 1 });
+  assert.deepStrictEqual([gc.published[1].hero_build_id, gc.published[1].version], [42, 1]);
+  for (const bad of [null, {}, { ...body, hero_id: 'x' }, { ...body, name: ' ' }, { ...body, details: {} }]) {
+    assert.strictEqual((await svc.handle('/builds', 'POST', new URLSearchParams(), bad)).status, 400);
+  }
 });

@@ -175,8 +175,12 @@ CREATE TABLE IF NOT EXISTS saved_builds (
     account_id      INTEGER,
     hero_id         INTEGER NOT NULL,
     name            TEXT NOT NULL,
-    items           TEXT NOT NULL,                -- JSON list of item ids, in buy order
-    notes           TEXT,
+    items           TEXT NOT NULL,                -- JSON list of the build's item ids
+    notes           TEXT,                         -- before `description`
+    description     TEXT,
+    details         TEXT,                         -- JSON, the game's CMsgHeroBuild.details
+    game_build_id   INTEGER,                      -- once published through the bot
+    game_version    INTEGER,
     client_version  INTEGER,
     created_at      INTEGER NOT NULL,
     updated_at      INTEGER NOT NULL
@@ -238,6 +242,15 @@ def init(conn: sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS match_players_account ON match_players(account_id, match_id);"
             "COMMIT;"
         )
+    saved_columns = {r["name"] for r in conn.execute("PRAGMA table_info(saved_builds)")}
+    for column, kind in (
+        ("description", "TEXT"),
+        ("details", "TEXT"),
+        ("game_build_id", "INTEGER"),
+        ("game_version", "INTEGER"),
+    ):
+        if column not in saved_columns:
+            conn.execute(f"ALTER TABLE saved_builds ADD COLUMN {column} {kind}")
     mp_columns = {r["name"] for r in conn.execute("PRAGMA table_info(match_players)")}
     for column, kind in (
         ("badge", "INTEGER"),

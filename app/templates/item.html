@@ -1,26 +1,21 @@
 {% extends "base.html" %}
-{% from "_game.html" import item_icon, item_chip, stats_list %}
+{% set game_ui = true %}
 {% block title %}{{ item.name }} · Deadlock Analytics{% endblock %}
 {% block content %}
-<section class="item-head slot-{{ item.slot }}">
-  {{ item_icon(item, 64) }}
-  <div>
-    <h1>{{ item.name }}</h1>
-    <p class="muted">{{ item.slot|capitalize }} · Tier {{ item.tier }} · <b>{{ item.cost|num }}</b> souls{% if item.active %} · Active{% endif %}</p>
-  </div>
-</section>
-{% if item.desc %}<p class="desc">{{ item.desc|safe }}</p>{% endif %}
-<h2>Stats</h2>
-{{ stats_list(item.stats) }}
-<p class="muted small">Highlighted: stats it gives your hero all the time (summed in the planner). Conditional ones only apply in some situations.</p>
-{% if item.components %}
-<h2>Builds from</h2>
-<div class="chips">{% for c in item.components %}{{ item_chip(by_id[c]) }}{% endfor %}</div>
-<p class="muted small">Buying it with the component in your slots costs the difference; the component's stats are replaced.</p>
-{% endif %}
-{% if item.upgrades_to %}
-<h2>Upgrades into</h2>
-<div class="chips">{% for c in item.upgrades_to %}{{ item_chip(by_id[c]) }}{% endfor %}</div>
-{% endif %}
-<p><a href="/planner?items={{ item.id }}">Start a build with it →</a> · <a href="/items?slot={{ item.slot }}">More {{ item.slot }} items</a></p>
+<p><a href="/items?slot={{ item.slot }}">← Shop</a></p>
+<div id="item-tip" style="max-width:420px">
+  <h1>{{ item.name }}</h1>
+  <p class="muted">{{ item.slot|capitalize }} · Tier {{ item.tier }} · {{ item.cost|num }} souls</p>
+  {% if item.desc %}<p>{{ item.desc|safe }}</p>{% endif %}
+</div>
+<p style="margin-top:16px"><a class="btn" href="/planner?items={{ item.id }}">Start a build with it</a></p>
+{% endblock %}
+{% block scripts %}
+<script>
+  DL.load().then(() => {
+    const el = document.getElementById("item-tip");
+    el.innerHTML = DL.itemTip(DL.items.get({{ item.id }}));
+    el.querySelector(".tip").style.width = "100%";
+  });
+</script>
 {% endblock %}

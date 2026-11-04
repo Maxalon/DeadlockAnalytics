@@ -1,23 +1,20 @@
 {% extends "base.html" %}
 {% from "_builds.html" import build_list %}
-{% block title %}Builds · Deadlock Analytics{% endblock %}
+{% block title %}{{ hero_info.name ~ " builds" if hero_info else "Builds" }} · Deadlock Analytics{% endblock %}
 {% block content %}
-<section class="head">
-  <h1>Builds</h1>
-  {% if me %}<a href="/players/{{ me.account_id }}/builds">{{ me.persona_name or me.account_id }}'s builds →</a>{% endif %}
-</section>
-<p class="muted small">Builds people published in the game's build browser, through <a href="https://deadlock-api.com">deadlock-api</a>.</p>
-<form class="filters" method="get" action="/builds">
-  <select name="hero" onchange="this.form.submit()">
-    <option value="">All heroes</option>
-    {% for h in hero_list %}<option value="{{ h.id }}"{% if hero == h.id %} selected{% endif %}>{{ h.name }}</option>{% endfor %}
-  </select>
-  <select name="sort" onchange="this.form.submit()">
-    {% for key, label in sorts.items() %}<option value="{{ key }}"{% if sort == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
-  </select>
-  <input type="search" name="q" value="{{ q }}" placeholder="Search build names">
-  <button type="submit">Search</button>
+<p><a href="/builds">← All heroes</a></p>
+<div class="page-head">
+  <div class="who">{% if hero_info %}<img src="{{ hero_info.icon }}" alt="" width="48" height="48">{% endif %}<h1>{{ hero_info.name ~ " builds" if hero_info else "Builds" }}</h1></div>
+  {% if hero_info %}<a class="btn" href="/planner?hero={{ hero_info.id }}">Create build</a>{% endif %}
+</div>
+<form class="row" method="get" action="/builds" style="margin-bottom:10px">
+  {% if hero %}<input type="hidden" name="hero" value="{{ hero }}">{% endif %}
+  <input type="hidden" name="sort" value="{{ sort }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search build names"><button class="btn small" type="submit">Search</button>
 </form>
+<div class="sort-tabs" style="margin-bottom:12px">
+  {% for key, label in sorts.items() %}<a class="{{ 'on' if sort == key }}" href="?hero={{ hero or '' }}&amp;sort={{ key }}&amp;q={{ q|urlencode }}">{{ label }}</a>{% endfor %}
+</div>
 {% if error %}<p class="neg small">{{ error }}</p>{% endif %}
 {{ build_list(builds, game) }}
 {% if not builds and not error %}<p class="muted">No builds found.</p>{% endif %}

@@ -15,6 +15,9 @@ module.exports = {
   GetMatchMetaData: type('CMsgClientToGCGetMatchMetaData'),
   GetMatchMetaDataResponse: type('CMsgClientToGCGetMatchMetaDataResponse'),
   MatchMetaData: type('CMsgMatchMetaData'),
+  HeroBuild: type('CMsgHeroBuild'),
+  UpdateHeroBuild: type('CMsgClientToGCUpdateHeroBuild'),
+  UpdateHeroBuildResponse: type('CMsgClientToGCUpdateHeroBuildResponse'),
   MatchMetaDataContents: type('CMsgMatchMetaDataContents'),
   // Plain JS numbers/strings instead of Long objects; 64-bit ids become strings.
   toObject: (T, msg) => T.toObject(msg, { longs: String, defaults: true }),

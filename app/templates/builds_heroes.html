@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_game.html" import no_data, hero_grid %}
+{% block title %}Builds · Deadlock Analytics{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Builds</h1>
+  <form method="get" action="/builds" class="row"><input type="search" name="q" placeholder="Search all builds by name"><button class="btn small" type="submit">Search</button></form>
+</div>
+{% if me %}
+<p><a href="/players/{{ me.account_id }}/builds">{{ me.persona_name or me.account_id }}'s in-game builds →</a>{% if mine %} · <a href="/planner">Your saved plans</a>{% endif %}</p>
+{% endif %}
+{{ no_data(game) }}
+<p class="muted small">Pick a hero to see the builds people published in the game.</p>
+{{ hero_grid(hero_list, "/builds?hero=") }}
+{% endblock %}

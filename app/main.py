@@ -1,5 +1,6 @@
 """FastAPI app: server-rendered pages, no client-side framework."""
 
+import hashlib
 import logging
 import threading
 import time
@@ -9,6 +10,7 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -55,6 +57,7 @@ def create_app(
 
     app = FastAPI(title="Deadlock Analytics", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.scheduler = scheduler
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
     @app.middleware("http")
@@ -68,6 +71,17 @@ def create_app(
         return await call_next(request)
 
     templates = Jinja2Templates(directory=HERE / "templates")
+    versions: dict[str, str] = {}
+
+    def asset(name: str) -> str:
+        """/static/<name>?v=<content hash>: browsers may cache it forever, a deploy changes the URL."""
+        if name not in versions:
+            path = HERE / "static" / name
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()[:10] if path.is_file() else "0"
+            versions[name] = f"/static/{name}?v={digest}"
+        return versions[name]
+
+    templates.env.globals["asset"] = asset
     templates.env.globals["labels"] = scoring.LABELS
     templates.env.filters["dt"] = lambda ts: (
         datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%d %H:%M UTC") if ts else "—"
@@ -251,7 +265,7 @@ def create_app(
         resp.set_cookie("theme", "light" if to == "light" else "dark", max_age=365 * 86400, samesite="lax")
         return resp
 
-    theorycraft.register(app, render, db, scheduler.api, HERE / "static")
+    theorycraft.register(app, render, db, scheduler.api, HERE / "static", fetcher)
 
     @app.get("/healthz")
     def healthz():

@@ -1,22 +1,32 @@
 {# Shared bits of the item / hero / build pages. #}
-{% macro item_icon(item, size=36) -%}
-  <img class="item-icon slot-{{ item.slot }}" src="{{ item.image }}" alt="" width="{{ size }}" height="{{ size }}" loading="lazy">
-{%- endmacro %}
-
-{% macro item_chip(item, note=None) -%}
-  <a class="item-chip slot-{{ item.slot }}" href="/items/{{ item.id }}" title="{{ item.name }}{% if note %} — {{ note }}{% endif %}">
-    {{ item_icon(item, 28) }}<span>{{ item.name }}</span>{% if item.active %}<i class="tag">active</i>{% endif %}
-  </a>
-{%- endmacro %}
-
-{% macro stats_list(stats, limit=99) -%}
-  <ul class="stats">
-    {%- for s in stats[:limit] %}
-    <li class="{{ 'cond' if s.conditional }}{{ ' given' if s.stat and not s.conditional }}"><b>{{ s.text }}</b> {{ s.label }}{% if s.conditional %} <span class="muted">(conditional)</span>{% endif %}</li>
-    {%- endfor %}
-  </ul>
-{%- endmacro %}
-
 {% macro no_data(game) -%}
   {% if not game %}<p class="empty">Game data hasn't been loaded yet. It's fetched in the background a minute after the site starts and again after every game update; reload in a moment.</p>{% endif %}
+{%- endmacro %}
+
+{% macro hero_grid(heroes, href_prefix, selected=None, suffix="") -%}
+<div class="hero-grid">
+  {% for h in heroes %}
+  <a class="hero-tile{{ ' on' if selected == h.id }}" href="{{ href_prefix }}{{ h.id }}{{ suffix }}">
+    <img src="{{ h.card or h.icon }}" alt="" loading="lazy">{% if h.new %}<i class="badge-new">New</i>{% endif %}<span>{{ h.name }}</span>
+  </a>
+  {% endfor %}
+</div>
+{%- endmacro %}
+
+{# An item tile rendered on the server, same markup as DL.tile in ui.js. #}
+{% macro tile(item, note=None, small=False) -%}
+<button type="button" class="tile slot-{{ item.slot }}{{ ' small' if small }}" data-item="{{ item.id }}" title="{{ item.name }}{% if note %} — {{ note }}{% endif %}">
+  <span class="tile-art"><span class="tile-tier">{{ "★" if item.tier == 5 else "T" ~ item.tier }}</span><img src="{{ item.image }}" alt="" loading="lazy">{% if item.active %}<span class="tile-active">Active</span>{% endif %}{% if note %}<span class="tile-note"></span>{% endif %}</span>
+  <span class="tile-name">{{ item.name }}</span>
+</button>
+{%- endmacro %}
+
+{% macro ability_order(steps, hero) -%}
+<div class="ab-order">
+  {% for s in steps %}
+  <div class="ab-step{{ ' unlock' if s.unlock }}" data-ability="{{ hero.id if hero else 0 }}:{{ s.ability.id }}">
+    <span class="n">{{ loop.index }}</span><img src="{{ s.ability.image }}" alt="">{% if s.unlock %}Unlock{% else %}<b>T{{ s.tier }}</b>{% endif %}
+  </div>
+  {% endfor %}
+</div>
 {%- endmacro %}

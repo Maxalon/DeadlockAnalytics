@@ -34,6 +34,7 @@ const gc = new DeadlockGC({
   refreshToken: token, saveRefreshToken: saveToken, log,
   saltsQuota: new RollingQuota({ file: config.saltsQuotaFile, limit: config.saltsPerDay }),
   historyQuota: new RollingQuota({ file: config.historyQuotaFile, limit: config.historyPagesPerDay }),
+  buildsQuota: new RollingQuota({ file: config.buildsQuotaFile, limit: config.buildPublishesPerDay }),
 });
 const service = new Service({
   gc, cacheDir: config.matchCacheDir, replayUrl: config.replayUrl, saltsApi: config.saltsApi, apiKey: config.apiKey,
@@ -57,9 +58,30 @@ if (token) {
   }, 60000).unref();
 }
 
+const MAX_BODY = 64 * 1024;
+
+async function readJson(req) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY) return undefined;
+    chunks.push(chunk);
+  }
+  if (!size) return null;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 http.createServer(async (req, res) => {
   const { pathname, searchParams } = new URL(req.url, 'http://localhost');
-  const { status, body } = await service.handle(pathname, req.method, searchParams);
+  const json = req.method === 'POST' ? await readJson(req) : null;
+  const { status, body } = json === undefined
+    ? { status: 400, body: { error: 'bad_request', message: 'body: JSON up to 64 KB' } }
+    : await service.handle(pathname, req.method, searchParams, json);
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
 }).listen(config.port, () => log.info(`fetcher listening on :${config.port}`));
