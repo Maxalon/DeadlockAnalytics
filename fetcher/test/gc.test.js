@@ -13,10 +13,11 @@ const enc = (T, body) => Buffer.from(T.encode(T.create(body)).finish());
 
 /** Answers GC messages the way Steam does; `onHistory`/`onMetadata` build the responses. */
 class FakeSteam extends EventEmitter {
-  constructor({ onHistory, onMetadata } = {}) {
+  constructor({ onHistory, onMetadata, onBuild } = {}) {
     super();
     this.onHistory = onHistory;
     this.onMetadata = onMetadata;
+    this.onBuild = onBuild;
     this.sent = [];
     this.added = [];
     this.removed = [];
@@ -45,6 +46,10 @@ class FakeSteam extends EventEmitter {
     if (msgType === MSG.METADATA) {
       const req = proto.toObject(proto.GetMatchMetaData, proto.GetMatchMetaData.decode(payload));
       setImmediate(() => cb(appid, msgType + 1, enc(proto.GetMatchMetaDataResponse, this.onMetadata(req))));
+    }
+    if (msgType === MSG.UPDATE_BUILD) {
+      const req = proto.toObject(proto.UpdateHeroBuild, proto.UpdateHeroBuild.decode(payload));
+      setImmediate(() => cb(appid, msgType + 1, enc(proto.UpdateHeroBuildResponse, this.onBuild(req.hero_build))));
     }
   }
 }
@@ -381,5 +386,43 @@ test('watchdog: Steam not answering liveness checks', async () => {
   client.getPersonas = async () => {};
   assert.strictEqual(await gc.probeSteam(), true);
   assert.strictEqual(gc.stuckReason(), null);
+  gc.stop();
+});
+
+test('publishing a hero build: the game message, authored by the bot, new then updated', async () => {
+  const seen = [];
+  const client = new FakeSteam({
+    onBuild: (b) => {
+      seen.push(b);
+      return b.hero_build_id ? { response: 1, hero_build_id: b.hero_build_id, version: b.version + 1 } : { response: 1, hero_build_id: 777, version: 1 };
+    },
+  });
+  const quota = new RollingQuota({ file: null, limit: 2 });
+  const gc = session(client, { buildsQuota: quota, now: () => 1_800_000_000_000 });
+  gc.start();
+  const details = {
+    mod_categories: [{ name: 'Early', description: 'lane', optional: true, mods: [{ ability_id: 1548066885, annotation: 'first', sell_priority: 5 }] }],
+    ability_order: { currency_changes: [{ ability_id: 9, currency_type: 2, delta: -1 }, { ability_id: 9, currency_type: 1, delta: -1 }] },
+  };
+  assert.deepStrictEqual(await gc.publishBuild({ hero_id: 13, name: 'Test', description: 'd', details }), { hero_build_id: 777, version: 1 });
+  const b = seen[0];
+  assert.strictEqual(b.hero_build_id, 0);
+  assert.strictEqual(b.author_account_id, client.steamID.accountid);
+  assert.strictEqual(b.publish_timestamp, 1_800_000_000);
+  assert.strictEqual(b.details.mod_categories[0].mods[0].annotation, 'first');
+  assert.strictEqual(b.details.mod_categories[0].optional, true);
+  assert.deepStrictEqual(b.details.ability_order.currency_changes.map((c) => c.delta), [-1, -1]);
+  assert.deepStrictEqual(await gc.publishBuild({ hero_id: 13, hero_build_id: 777, version: 1, name: 'Test', details }), { hero_build_id: 777, version: 2 });
+  await assert.rejects(gc.publishBuild({ hero_id: 13, name: 'Test', details }), { code: 'quota' });
+  gc.stop();
+});
+
+test('publishing: refusals from the game become typed errors', async () => {
+  const client = new FakeSteam({ onBuild: () => ({ response: 8 }) });
+  const gc = session(client);
+  gc.start();
+  await assert.rejects(gc.publishBuild({ hero_id: 13, hero_build_id: 5, version: 1, name: 'x', details: { mod_categories: [] } }), { code: 'conflict' });
+  client.onBuild = () => ({ response: 0 });
+  await assert.rejects(gc.publishBuild({ hero_id: 13, name: 'x', details: { mod_categories: [] } }), { code: 'gc_error' });
   gc.stop();
 });

@@ -1,32 +1,18 @@
 {% extends "base.html" %}
-{% from "_game.html" import item_icon, stats_list, no_data %}
+{% from "_game.html" import no_data %}
+{% set game_ui = true %}
 {% block title %}Items · Deadlock Analytics{% endblock %}
 {% block content %}
-<section class="head">
-  <h1>Items</h1>
-  {% if game %}<span class="muted small">Game version {{ game.client_version }}</span>{% endif %}
-</section>
+<div class="page-head"><h1>Shop</h1>{% if game %}<span class="muted small">Game version {{ game.client_version }} · tap an item for details</span>{% endif %}</div>
 {{ no_data(game) }}
-<form class="filters" method="get" action="/items">
-  <input type="search" name="q" value="{{ q }}" placeholder="Search name or stat (e.g. lifesteal)">
-  <div class="seg">
-    <a class="{{ 'on' if not slot }}" href="?tier={{ tier or '' }}&amp;q={{ q|urlencode }}">All</a>
-    {% for s in slots %}<a class="slot-{{ s }}{{ ' on' if slot == s }}" href="?slot={{ s }}&amp;tier={{ tier or '' }}&amp;q={{ q|urlencode }}">{{ s|capitalize }}</a>{% endfor %}
-  </div>
-  <div class="seg">
-    <a class="{{ 'on' if not tier }}" href="?slot={{ slot }}&amp;q={{ q|urlencode }}">Any tier</a>
-    {% for t in range(1, 6) %}<a class="{{ 'on' if tier == t }}" href="?slot={{ slot }}&amp;tier={{ t }}&amp;q={{ q|urlencode }}">T{{ t }}</a>{% endfor %}
-  </div>
-  <input type="hidden" name="slot" value="{{ slot }}"><input type="hidden" name="tier" value="{{ tier or '' }}">
-</form>
-<div class="item-grid">
-  {% for i in items %}
-  <a class="item-card slot-{{ i.slot }}" href="/items/{{ i.id }}">
-    <div class="item-top">{{ item_icon(i, 40) }}<div><strong>{{ i.name }}</strong><span class="muted small">T{{ i.tier }} · {{ i.cost|num }} souls{% if i.active %} · active{% endif %}</span></div></div>
-    {{ stats_list(i.stats, 4) }}
-  </a>
-  {% else %}
-  {% if game %}<p class="muted">No items match.</p>{% endif %}
-  {% endfor %}
-</div>
+<div id="shop"><p class="muted">Loading the shop…</p></div>
+<noscript>
+  <ul>{% for i in items %}<li><a href="/items/{{ i.id }}">{{ i.name }}</a> ({{ i.slot }}, {{ i.cost|num }})</li>{% endfor %}</ul>
+</noscript>
+{% endblock %}
+{% block scripts %}
+<script>
+  DL.load().then(() => DL.shop(document.getElementById("shop"), { slot: {{ (slot or "weapon")|tojson }} }))
+    .catch((e) => { document.getElementById("shop").textContent = "Game data isn't available yet (" + e.message + ")."; });
+</script>
 {% endblock %}

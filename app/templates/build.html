@@ -1,31 +1,35 @@
 {% extends "base.html" %}
-{% from "_game.html" import item_icon %}
+{% from "_game.html" import tile, ability_order %}
+{% set game_ui = true %}
 {% block title %}{{ build.name }} · Deadlock Analytics{% endblock %}
 {% block content %}
-{% set h = game.heroes_by_id.get(build.hero_id) if game else None %}
-<section class="head">
-  <div class="who">
-    {% if h and h.icon %}<img src="{{ h.icon }}" alt="" width="56" height="56">{% endif %}
-    <div><h1>{{ build.name }}</h1>
-      <span class="muted small">{{ h.name if h else "Hero " ~ build.hero_id }} · version {{ build.version }}{% if build.updated %} · updated <time datetime="{{ build.updated|iso }}" data-local>{{ build.updated|day }}</time>{% endif %}{% if build.favorites is not none %} · ★ {{ build.favorites|num }}{% endif %}
-      · by {% if build.author in accounts %}<a href="/players/{{ build.author }}/builds">{{ accounts[build.author].persona_name or build.author }}</a>{% else %}<a href="https://steamcommunity.com/profiles/[U:1:{{ build.author }}]" rel="noreferrer">{{ build.author }}</a>{% endif %}</span>
-    </div>
+<p><a href="/builds?hero={{ build.hero_id }}">← {{ hero.name ~ " builds" if hero else "Builds" }}</a></p>
+<section class="hero-banner" style="--bg-img: url('{{ hero.background if hero else '' }}')">
+  {% if hero %}<img class="portrait" src="{{ hero.card }}" alt="">{% else %}<span></span>{% endif %}
+  <div>
+    <h1 style="font-size:1.9rem">{{ build.name }}</h1>
+    <p class="muted small">{{ hero.name if hero else "" }} · version {{ build.version }}{% if build.updated %} · updated <time datetime="{{ build.updated|iso }}" data-local>{{ build.updated|day }}</time>{% endif %}{% if build.favorites is not none %} · <span class="fav">★ {{ build.favorites|num }}</span>{% endif %}
+      · by {% if build.author in accounts %}<a href="/players/{{ build.author }}/builds">{{ accounts[build.author].persona_name or build.author }}</a>{% else %}<a href="https://steamcommunity.com/profiles/[U:1:{{ build.author }}]" rel="noreferrer">{{ build.author }}</a>{% endif %}
+      · in game: build ID <b>{{ build.id }}</b></p>
+    <div class="actions"><a class="btn" href="/planner?build={{ build.hero_id }}/{{ build.id }}">Open in editor</a></div>
   </div>
-  <a href="/planner?build={{ build.hero_id }}/{{ build.id }}"><button type="button">Open in planner</button></a>
 </section>
-{% if description %}<p class="desc pre">{{ description }}</p>{% endif %}
-<p class="muted small">In game: search build ID <b>{{ build.id }}</b> in the hero's build browser.</p>
+{% if description %}<p class="pre" style="max-width:75ch">{{ description }}</p>{% endif %}
+
 {% for c in categories %}
-<section class="build-cat">
-  <h2>{{ c.name or "Items" }}</h2>
-  {% if c.description %}<p class="muted small pre">{{ c.description }}</p>{% endif %}
-  <div class="chips">
-    {% for m in c.mods %}
-    {% set i = by_id.get(m.id) %}
-    {% if i %}<a class="item-chip slot-{{ i.slot }}" href="/items/{{ i.id }}" title="{{ i.name }}{% if m.note %} — {{ m.note }}{% endif %}">{{ item_icon(i, 28) }}<span>{{ i.name }}{% if m.note %}<br><span class="muted small">{{ m.note }}</span>{% endif %}</span></a>
-    {% else %}<span class="item-chip muted" title="Not a shop item in the current game version">#{{ m.id }}</span>{% endif %}
+<section class="cat">
+  <div class="cat-head"><h3>{{ c.name or "Items" }}</h3>{% if c.optional %}<span class="cat-opt">Optional</span>{% endif %}</div>
+  {% if c.description %}<p class="cat-desc">{{ c.description }}</p>{% endif %}
+  <div class="tile-row">
+    {% for m in c.mods %}{% set i = by_id.get(m.id) %}
+    {% if i %}<div>{{ tile(i, m.note) }}{% if m.note %}<div class="cat-note">{{ m.note }}</div>{% endif %}</div>{% endif %}
     {% endfor %}
   </div>
 </section>
 {% endfor %}
+
+{% if steps %}
+<h2>Ability order</h2>
+{{ ability_order(steps, hero) }}
+{% endif %}
 {% endblock %}

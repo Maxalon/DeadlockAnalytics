@@ -10,7 +10,7 @@ const SteamID = require('steamid');
 const proto = require('./proto');
 
 const APP_ID = 1422450;
-const MSG = { WELCOME: 4004, HELLO: 4006, CONNECTION_STATUS: 4009, HISTORY: 9112, METADATA: 9167 };
+const MSG = { WELCOME: 4004, HELLO: 4006, CONNECTION_STATUS: 4009, HISTORY: 9112, METADATA: 9167, UPDATE_BUILD: 9193 };
 const HAVE_SESSION = 0; // GCConnectionStatus
 const HELLO_INTERVAL_MS = 5000;
 const REQUEST_TIMEOUT_MS = 20000;
@@ -48,6 +48,17 @@ const MAX_NOT_READY_MS = 15 * 60 * 1000;
 const MAX_PROBE_FAILURES = 2;
 const PROBE_TIMEOUT_MS = 30 * 1000;
 
+const BUILD_RESPONSES = {
+  2: ['conflict', 'the build belongs to another account'],
+  3: ['bad_request', 'unknown build id'],
+  4: ['bad_request', 'the game refused the build name'],
+  5: ['bad_request', 'the build name is too long'],
+  6: ['bad_request', 'the description is too long'],
+  7: ['bad_request', 'the game refused the build contents'],
+  8: ['conflict', 'the build changed in the game since; publish it as a new build'],
+  9: ['bad_request', 'the build is too large'],
+};
+
 function avatarUrl(user) {
   const hash = Buffer.isBuffer(user.avatar_hash) ? user.avatar_hash.toString('hex') : '';
   if (!hash || /^0+$/.test(hash)) return null; // Steam's default avatar
@@ -73,11 +84,12 @@ class DeadlockGC extends EventEmitter {
    * @param {number} [opts.retryDelayMs] first wait before logging on again after Steam couldn't be reached
    * @param {import('./quota').RollingQuota} [opts.saltsQuota] daily budget for match salts
    * @param {import('./quota').RollingQuota} [opts.historyQuota] daily budget for match history pages
+   * @param {import('./quota').RollingQuota} [opts.buildsQuota] daily budget for publishing hero builds
    */
   constructor({
     client, refreshToken, saveRefreshToken, log = console, now = Date.now, reloginDelayMs = RELOGIN_DELAY_MS,
     retryDelayMs = RETRY_DELAY_MS,
-    saltsQuota = null, historyQuota = null,
+    saltsQuota = null, historyQuota = null, buildsQuota = null,
   }) {
     super();
     this.client = client || new SteamUser({ renewRefreshTokens: true, autoRelogin: true });
@@ -93,6 +105,7 @@ class DeadlockGC extends EventEmitter {
     this.now = now;
     this.saltsQuota = saltsQuota;
     this.historyQuota = historyQuota;
+    this.buildsQuota = buildsQuota;
     this.playingElsewhere = false;
     this._metadataPausedUntil = 0;
     this._metadataPause = METADATA_PAUSE_MS;
@@ -126,6 +139,7 @@ class DeadlockGC extends EventEmitter {
       metadata_paused_until: this._metadataPausedUntil > this.now() ? new Date(this._metadataPausedUntil).toISOString() : null,
       salts_budget: this.saltsQuota ? this.saltsQuota.status() : null,
       history_budget: this.historyQuota ? this.historyQuota.status() : null,
+      builds_budget: this.buildsQuota ? this.buildsQuota.status() : null,
       not_ready_since: this.notReadySince ? new Date(this.notReadySince).toISOString() : null,
       last_error: this.lastError,
     };
@@ -465,6 +479,30 @@ class DeadlockGC extends EventEmitter {
     if (resp.result === 6) throw new GcError('invalid_match', `match ${matchId} is unknown to Valve`);
     if (resp.result === 7) throw new GcError('in_flight', `match ${matchId} is still being processed`);
     throw new GcError('gc_error', `match metadata result ${resp.result}${resp.result === 1 ? ' without salt' : ''}`);
+  }
+
+  /**
+   * Publish a hero build under the bot's account: a new one when `hero_build_id` is 0 or missing,
+   * else an update of the bot's own build at `version`. Returns { hero_build_id, version }.
+   */
+  async publishBuild(build) {
+    if (this.buildsQuota && !this.buildsQuota.take()) {
+      throw new GcError('quota', `the bot's daily budget for publishing builds is used up; next one free at ${this.buildsQuota.status().next_free_at}`);
+    }
+    const accountId = this.client.steamID ? this.client.steamID.accountid : 0;
+    const now = Math.floor(this.now() / 1000);
+    const heroBuild = {
+      ...build,
+      hero_build_id: build.hero_build_id || 0,
+      author_account_id: accountId,
+      last_updated_timestamp: now,
+      publish_timestamp: now,
+      language: build.language || 0,
+    };
+    const resp = await this._request(MSG.UPDATE_BUILD, proto.UpdateHeroBuild, { hero_build: heroBuild }, proto.UpdateHeroBuildResponse);
+    if (resp.response === 1) return { hero_build_id: resp.hero_build_id, version: resp.version };
+    const [code, message] = BUILD_RESPONSES[resp.response] || ['gc_error', `the game didn't accept the build (response ${resp.response})`];
+    throw new GcError(code, message);
   }
 }
 

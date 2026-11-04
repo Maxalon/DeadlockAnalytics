@@ -69,5 +69,10 @@ class Fetcher:
         """accept / decline / remove / block / unblock. Requests are never accepted automatically."""
         self._request("POST", f"/friends/{account_id}/{action}", timeout=15)
 
+    def publish_build(self, build: dict) -> dict:
+        """Publish a hero build through the bot ({hero_id, name, description, details, hero_build_id?,
+        version?}); returns {hero_build_id, version}. Costs one of the bot's daily publishes."""
+        return self._request("POST", "/builds", json=build, timeout=60)
+
     def decline_all(self) -> int:
         return self._request("POST", "/friends/decline-all", timeout=15)["declined"]

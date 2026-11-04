@@ -56,19 +56,23 @@ behind an authenticating proxy.
 ## Items, heroes and builds
 
 For theorycrafting on the go (installable on Android: open the site in Chrome, "Add to Home
-screen"; the last game data stays available offline):
+screen"; the last game data stays available offline). Styled after the game's own UI:
 
-- `/items` and `/heroes`: every shop item with its stats, description and upgrade path; every
-  hero's abilities with their 1/2/5 AP upgrades, weapon, base stats, per-level gains and the
-  investment payoffs of each shop category.
-- `/planner`: pick a hero, add items in buy order; it shows souls spent per category, the
-  investment bonus reached and how far the next one is, components that were upgraded away, and
-  the summed always-on stats. Builds are saved in the database per player.
-- `/builds`: the builds people published in the game, searchable per hero (deadlock-api's mirror
-  of Valve's build browser); each opens in the planner. `/players/<id>/builds` shows a tracked
-  player's own in-game builds; "Refresh from Steam" asks Valve's build service live.
-- "Who are you?" in the menu picks one of the tracked accounts for this device; builds and the
-  planner then default to that player.
+- `/items`: the shop, by category and tier. Tapping an item (hovering on desktop) shows its
+  tooltip as in the game: stats, passive/active blocks with cooldowns, what it builds from and into.
+- `/heroes/<id>`: weapon, vitality and spirit stats, per-level gains, every ability with its
+  tooltip and 1/2/5 AP upgrades, and the investment payoffs of each shop category.
+- `/builds`: pick a hero, then browse the builds people published in the game (deadlock-api's
+  mirror of Valve's build browser). A build shows its categories, annotations and ability order.
+  `/players/<id>/builds` lists a tracked player's own in-game builds.
+- `/planner`: a build editor like the game's: named categories with descriptions and an
+  optional flag, items with annotations and sell priority, the ability point order, souls per
+  category with investment bonuses, and summed stats. Any in-game build opens in it unchanged.
+  Builds are saved per player ("Who are you?" in the menu). On phones it has Build / Shop /
+  Abilities / Stats tabs.
+- "Publish to game" (needs the fetcher): the Steam bot publishes the build to the game's build
+  browser, then you search its build ID in game. Published builds are public and authored by the
+  bot account; `BOT_BUILD_PUBLISHES_PER_DAY` (default 20) limits them.
 
 Game data is deadlock-api's datamined copy of the game files. The site checks the game version
 every 15 minutes (`GAME_DATA_INTERVAL_S`) and reloads items and heroes when it changes; until

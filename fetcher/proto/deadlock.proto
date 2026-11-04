@@ -116,3 +116,61 @@ message CMsgMatchMetaDataContents {
   }
   optional MatchInfo match_info = 2;
 }
+
+// A hero build, as the game's build editor saves it (citadel_gcmessages_common.proto).
+message CMsgHeroBuild {
+  message BuildModEntry {
+    optional uint32 ability_id = 1;       // the shop item
+    optional string annotation = 2;
+    optional uint32 required_flex_slots = 3;
+    optional uint32 sell_priority = 4;
+    optional uint32 imbue_target_ability_id = 5;
+  }
+  message BuildModCategory {
+    repeated BuildModEntry mods = 1;
+    optional string name = 2;
+    optional string description = 3;
+    optional float width = 4;
+    optional float height = 5;
+    optional bool optional = 6;
+  }
+  message CurrencyChange {
+    optional uint32 ability_id = 1;
+    optional int32 currency_type = 2;     // 2 ability unlock, 1 ability points
+    optional int32 delta = 3;             // -1, -2, -5: the first, second, third upgrade
+    optional string annotation = 4;
+  }
+  message AbilityOrder {
+    repeated CurrencyChange currency_changes = 1;
+  }
+  message Details_V0 {
+    repeated BuildModCategory mod_categories = 1;
+    optional AbilityOrder ability_order = 2;
+  }
+  optional uint32 hero_build_id = 1;      // 0: a new build
+  optional uint32 hero_id = 2;
+  optional uint32 author_account_id = 3;
+  optional uint32 last_updated_timestamp = 4;
+  optional string name = 5;
+  optional string description = 6;
+  optional uint32 language = 7;
+  optional uint32 version = 8;            // the version being replaced, for an update
+  optional uint32 origin_build_id = 9;
+  optional Details_V0 details = 10;
+  repeated uint32 tags = 11;
+  optional bool development_build = 12;
+  optional uint32 publish_timestamp = 13;
+}
+
+// k_EMsgClientToGCUpdateHeroBuild = 9193, response 9194: create (hero_build_id 0) or update a build.
+message CMsgClientToGCUpdateHeroBuild {
+  optional CMsgHeroBuild hero_build = 1;
+}
+
+message CMsgClientToGCUpdateHeroBuildResponse {
+  // 0 internal error, 1 success, 2 not author, 3 invalid build id, 4 invalid name, 5 name too long,
+  // 6 description too long, 7 invalid details, 8 stale version, 9 build too large
+  optional uint32 response = 1;
+  optional uint32 hero_build_id = 2;
+  optional uint32 version = 3;
+}

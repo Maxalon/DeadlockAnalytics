@@ -159,13 +159,37 @@ class Service {
     return { status: 200, body: await this.gc.matchSalts(matchId, targetAccountId, { force }) };
   }
 
+  /**
+   * Publish a hero build through the bot: { hero_id, hero_build_id?, version?, name, description, details }.
+   * The web app has already checked the contents against the game data.
+   */
+  async publishBuild(build) {
+    const ok = build && Number.isInteger(build.hero_id) && build.hero_id > 0 && typeof build.name === 'string'
+      && build.name.trim() && build.details && Array.isArray(build.details.mod_categories);
+    if (!ok) return { status: 400, body: { error: 'bad_request', message: 'need hero_id, name and details.mod_categories' } };
+    const fields = {
+      hero_id: build.hero_id,
+      name: build.name.trim(),
+      description: typeof build.description === 'string' ? build.description : '',
+      details: build.details,
+    };
+    if (Number.isInteger(build.hero_build_id) && build.hero_build_id > 0) {
+      fields.hero_build_id = build.hero_build_id;
+      fields.version = Number.isInteger(build.version) ? build.version : 0;
+    }
+    const result = await this.gc.publishBuild(fields);
+    this.log.info(`steam: published hero build ${result.hero_build_id} v${result.version} (hero ${build.hero_id})`);
+    return { status: 200, body: result };
+  }
+
   /** Route a request to a handler; errors from the GC become HTTP statuses. */
-  async handle(pathname, method = 'GET', query = new URLSearchParams()) {
+  async handle(pathname, method = 'GET', query = new URLSearchParams(), json = null) {
     const account = /^\d{1,10}$/.test(query.get('account') || '') ? Number(query.get('account')) : null;
     try {
       let m;
       if (method === 'POST') {
         if (pathname === '/friends/decline-all') return { status: 200, body: { declined: this.gc.declineAll() } };
+        if (pathname === '/builds') return await this.publishBuild(json);
         if ((m = pathname.match(/^\/friends\/(\d{1,10})\/([a-z]+)$/))) {
           await this.gc.friendAction(Number(m[1]), m[2]);
           return { status: 200, body: this.gc.friends() };
