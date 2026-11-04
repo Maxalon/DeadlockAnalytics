@@ -1,0 +1,17 @@
+{% macro build_list(builds, game, accounts={}) -%}
+<ul class="build-list">
+  {% for b in builds %}
+  {% set h = game.heroes_by_id.get(b.hero_id) if game else None %}
+  <li>
+    <a class="build-row" href="/builds/{{ b.hero_id }}/{{ b.id }}">
+      {% if h and h.icon %}<img src="{{ h.icon }}" alt="" width="36" height="36" loading="lazy">{% endif %}
+      <div class="build-main">
+        <strong>{{ b.name }}</strong>
+        <span class="muted small">{{ h.name if h else "Hero " ~ b.hero_id }} · {{ b.n_items }} items · v{{ b.version }}{% if b.updated %} · <time datetime="{{ b.updated|iso }}" data-local>{{ b.updated|day }}</time>{% endif %}{% if b.author in accounts %} · by {{ accounts[b.author].persona_name or b.author }}{% endif %}</span>
+      </div>
+      {% if b.favorites is not none %}<span class="fav" title="Favourites{% if b.weekly %}, {{ b.weekly }} this week{% endif %}">★ {{ b.favorites|k }}</span>{% endif %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{%- endmacro %}

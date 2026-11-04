@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_builds.html" import build_list %}
+{% block title %}{{ account.persona_name or account.account_id }}'s builds · Deadlock Analytics{% endblock %}
+{% block content %}
+<section class="head">
+  <div class="who">
+    {% if account.avatar_url %}<img src="{{ account.avatar_url }}" alt="" width="56" height="56">{% endif %}
+    <div><h1>{{ account.persona_name or account.account_id }}'s builds</h1><a class="small" href="/players/{{ account.account_id }}">← Matches</a></div>
+  </div>
+  <form method="post" action="/players/{{ account.account_id }}/builds/refresh" class="sync">
+    <span class="muted small">{% if fetched %}{{ "Asked Steam" if fetched.source == "steam" else "From deadlock-api" }} <time datetime="{{ fetched.fetched_at|iso }}" data-local>{{ fetched.fetched_at|day }}</time>{% endif %}</span>
+    <button type="submit" title="Ask Valve's build service now, through deadlock-api">Refresh from Steam</button>
+  </form>
+</section>
+{% if error %}<p class="neg small">{{ error }}</p>{% endif %}
+<h2>In-game builds</h2>
+<p class="muted small">Builds this player made in the game (published or saved to their account). Builds they only subscribed to aren't visible to anyone else. If one is missing, press Refresh.</p>
+{{ build_list(builds, game) }}
+{% if not builds %}<p class="muted">None found.</p>{% endif %}
+<h2>Planned here</h2>
+{% if saved %}
+<ul class="build-list">
+  {% for b in saved %}
+  {% set h = game.heroes_by_id.get(b.hero_id) if game else None %}
+  <li><a class="build-row" href="/planner/{{ b.id }}">{% if h and h.icon %}<img src="{{ h.icon }}" alt="" width="36" height="36">{% endif %}<div class="build-main"><strong>{{ b.name }}</strong><span class="muted small">{{ h.name if h else "" }} · <time datetime="{{ b.updated_at|iso }}" data-local>{{ b.updated_at|day }}</time></span></div></a></li>
+  {% endfor %}
+</ul>
+{% else %}<p class="muted">Nothing yet. <a href="/planner">Plan a build</a>.</p>{% endif %}
+{% endblock %}

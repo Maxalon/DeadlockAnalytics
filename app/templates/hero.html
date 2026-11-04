@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ hero.name }} · Deadlock Analytics{% endblock %}
+{% block content %}
+<section class="head">
+  <div class="who">
+    {% if hero.icon %}<img src="{{ hero.icon }}" alt="" width="56" height="56">{% endif %}
+    <div><h1>{{ hero.name }}</h1><span class="muted small">{{ hero.tags|join(" · ") }}{% if hero.complexity %} · complexity {{ hero.complexity }}/3{% endif %}</span></div>
+  </div>
+  <div class="sync"><a href="/builds?hero={{ hero.id }}">Builds</a><a href="/planner?hero={{ hero.id }}"><button type="button">Plan a build</button></a></div>
+</section>
+{% if hero.role %}<p><b>{{ hero.role|safe }}</b></p>{% endif %}
+{% if hero.playstyle %}<p class="muted">{{ hero.playstyle|safe }}</p>{% endif %}
+
+<h2>Abilities</h2>
+<div class="abilities">
+  {% for a in hero.abilities %}
+  <article class="ability">
+    <header>{% if a.image %}<img src="{{ a.image }}" alt="" width="40" height="40" loading="lazy">{% endif %}<div><strong>{{ loop.index }}. {{ a.name }}</strong>{% if a.quip %}<span class="muted small">{{ a.quip|safe }}</span>{% endif %}</div></header>
+    <p class="desc">{{ a.desc|safe }}</p>
+    {% if a.stats %}<ul class="stats inline">{% for s in a.stats %}<li><b>{{ s.text }}</b> {{ s.label }}</li>{% endfor %}</ul>{% endif %}
+    <ol class="tiers">
+      {% for u in a.upgrades %}
+      <li><span class="tier-tag">{{ [1, 2, 5][loop.index0] if loop.index0 < 3 else loop.index }} AP</span> {% if u.text %}{{ u.text|safe }}{% else %}{{ u.bonuses|join(", ") }}{% endif %}</li>
+      {% endfor %}
+    </ol>
+  </article>
+  {% endfor %}
+</div>
+
+<div class="two-col">
+  <section>
+    <h2>Weapon</h2>
+    <table class="narrow"><tbody>{% for label, v in hero.weapon %}<tr><td>{{ label }}</td><td class="num">{{ v }}</td></tr>{% endfor %}</tbody></table>
+    <h2>Base stats</h2>
+    <table class="narrow"><tbody>{% for label, v in hero.start %}<tr><td>{{ label }}</td><td class="num">{{ v }}</td></tr>{% endfor %}</tbody></table>
+    {% if hero.per_level %}
+    <h2>Per level (boon)</h2>
+    <table class="narrow"><tbody>{% for label, v in hero.per_level %}<tr><td>{{ label }}</td><td class="num">+{{ v }}</td></tr>{% endfor %}</tbody></table>
+    {% endif %}
+  </section>
+  <section>
+    <h2>Investment payoffs</h2>
+    <p class="muted small">Bonus for the souls spent on items of each category (counted at item price; an upgrade counts its full price).</p>
+    <table class="invest">
+      <thead><tr><th>Souls</th>{% for slot, (label, unit) in investment.items() %}<th class="num slot-{{ slot }}">{{ slot|capitalize }}<br><span class="muted">{{ label }}</span></th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for souls, bonus in hero.investment_rows %}
+        <tr><td class="num">{{ souls|num }}</td>{% for slot, (label, unit) in investment.items() %}<td class="num">{% if bonus[slot] is not none %}+{{ "%g"|format(bonus[slot]) }}{{ unit }}{% else %}—{% endif %}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% if hero.lore %}<details class="notes"><summary>Lore</summary><p class="muted">{{ hero.lore|safe }}</p></details>{% endif %}
+{% endblock %}

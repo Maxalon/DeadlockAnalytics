@@ -1,5 +1,7 @@
 """Background jobs: account match sync, hero baseline snapshots, hero/profile metadata."""
 
+import hashlib
+import json
 import logging
 import math
 import sqlite3
@@ -616,3 +618,71 @@ def refresh_profiles(conn: sqlite3.Connection, api: DeadlockApi) -> None:
                 "UPDATE accounts SET persona_name = ?, avatar_url = ? WHERE account_id = ?",
                 (p.get("personaname"), p.get("avatarmedium") or p.get("avatar"), p["account_id"]),
             )
+
+
+# How long after a new game version to keep waiting for deadlock-api to rebuild its copy of the
+# game files, and how often to look meanwhile (each look downloads ~8 MB).
+GAME_DATA_WAIT_S = 86400
+GAME_DATA_RETRY_S = 3600
+
+
+def refresh_game_data(conn: sqlite3.Connection, api: DeadlockApi, force: bool = False) -> bool:
+    """Update detector: notice a new game version (Steam's client version, through deadlock-api)
+    and fetch the items, heroes and shop prices for it. Cheap when nothing changed: one small
+    request. Returns whether new game data was stored."""
+    now = int(time.time())
+    info = api.steam_info()
+    version = int(info["client_version"])
+    with transaction(conn):
+        if conn.execute("SELECT 1 FROM game_versions WHERE client_version = ?", (version,)).fetchone() is None:
+            log.info("new game version %s (built %s)", version, info.get("version_datetime"))
+            conn.execute(
+                "INSERT INTO game_versions (client_version, version_datetime, seen_at) VALUES (?, ?, ?)",
+                (version, info.get("version_datetime"), now),
+            )
+    stored = {r["kind"]: r for r in conn.execute("SELECT kind, client_version, hash FROM game_data")}
+    if not force and stored.get("items") and stored["items"]["client_version"] == version:
+        return False
+    seen_at = conn.execute("SELECT seen_at FROM game_versions WHERE client_version = ?", (version,)).fetchone()[0]
+    last_try = conn.execute("SELECT last_started_at FROM job_runs WHERE job = 'game_data_fetch'").fetchone()
+    tried = (last_try[0] or 0) if last_try else 0
+    if not force and stored and tried >= seen_at and now - tried < GAME_DATA_RETRY_S:
+        return False  # still waiting for deadlock-api's rebuild; don't download it again yet
+    _record(conn, "game_data_fetch", now, None)
+    blobs = {"items": api.asset_items(), "heroes": api.asset_heroes(), "generic": api.generic_data()}
+    texts = {k: json.dumps(v, separators=(",", ":"), sort_keys=True) for k, v in blobs.items()}
+    hashes = {k: hashlib.sha256(t.encode()).hexdigest() for k, t in texts.items()}
+    unchanged = stored and all(stored.get(k) and stored[k]["hash"] == hashes[k] for k in ("items", "heroes"))
+    if unchanged and not force and now - seen_at < GAME_DATA_WAIT_S:
+        log.info("game version %s: deadlock-api still serves the old game data; trying again later", version)
+        return False
+    with transaction(conn):
+        for kind, text in texts.items():
+            conn.execute(
+                """INSERT OR REPLACE INTO game_data (kind, client_version, fetched_at, hash, json)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (kind, version, now, hashes[kind], text),
+            )
+        conn.execute("UPDATE game_versions SET data_at = ? WHERE client_version = ?", (now, version))
+    log.info("game data for version %s stored%s", version, " (unchanged)" if unchanged else "")
+    return True
+
+
+def refresh_player_builds(conn: sqlite3.Connection, api: DeadlockApi, account_id: int, live: bool = False) -> None:
+    """A tracked player's own in-game builds. live: ask Valve now (deadlock-api fetches them
+    from the game's build service); else deadlock-api's stored copy, newest version of each."""
+    if live:
+        builds = api.builds_by_author(account_id)
+    else:
+        builds = api.builds(author_id=account_id, only_latest="true", limit=200, sort_by="updated_at")
+    latest: dict[int, dict] = {}
+    for b in builds:  # by-author returns every version: keep the newest of each build
+        hb = b.get("hero_build") or {}
+        old = latest.get(hb.get("hero_build_id"))
+        if old is None or (hb.get("version") or 0) > (old["hero_build"].get("version") or 0):
+            latest[hb.get("hero_build_id")] = b
+    with transaction(conn):
+        conn.execute(
+            "INSERT OR REPLACE INTO player_builds (account_id, fetched_at, source, json) VALUES (?, ?, ?, ?)",
+            (account_id, int(time.time()), "steam" if live else "search", json.dumps(list(latest.values()))),
+        )

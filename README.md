@@ -53,6 +53,28 @@ Accounts are added and removed at `/accounts` (SteamID3, SteamID64 or a
 `steamcommunity.com/profiles/…` link). There is no login, so run it on a private network or
 behind an authenticating proxy.
 
+## Items, heroes and builds
+
+For theorycrafting on the go (installable on Android: open the site in Chrome, "Add to Home
+screen"; the last game data stays available offline):
+
+- `/items` and `/heroes`: every shop item with its stats, description and upgrade path; every
+  hero's abilities with their 1/2/5 AP upgrades, weapon, base stats, per-level gains and the
+  investment payoffs of each shop category.
+- `/planner`: pick a hero, add items in buy order; it shows souls spent per category, the
+  investment bonus reached and how far the next one is, components that were upgraded away, and
+  the summed always-on stats. Builds are saved in the database per player.
+- `/builds`: the builds people published in the game, searchable per hero (deadlock-api's mirror
+  of Valve's build browser); each opens in the planner. `/players/<id>/builds` shows a tracked
+  player's own in-game builds; "Refresh from Steam" asks Valve's build service live.
+- "Who are you?" in the menu picks one of the tracked accounts for this device; builds and the
+  planner then default to that player.
+
+Game data is deadlock-api's datamined copy of the game files. The site checks the game version
+every 15 minutes (`GAME_DATA_INTERVAL_S`) and reloads items and heroes when it changes; until
+deadlock-api has rebuilt its copy for the new version it keeps the old one and looks again
+hourly. `/patches` lists the versions seen and Valve's patch notes.
+
 ## Running it
 
 CI publishes `ghcr.io/maxalon/deadlockanalytics:latest` on every push to `main`.

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ saved.name if saved else "Build planner" }} · Deadlock Analytics{% endblock %}
+{% block content %}
+<section class="head">
+  <h1>{{ saved.name if saved else "Build planner" }}</h1>
+  {% if game %}<span class="muted small">Game version {{ game.client_version }}{% if saved and saved.client_version and saved.client_version != game.client_version %} · <span class="neg">saved for version {{ saved.client_version }}; items may have changed</span>{% endif %}</span>{% endif %}
+</section>
+{% if source %}<p class="muted small">Copied from <a href="/builds/{{ source.hero_build.hero_id }}/{{ source.hero_build.hero_build_id }}">{{ source.hero_build.name }}</a>. Save it to keep your changes.</p>{% endif %}
+<script id="planner-state" type="application/json">{{ state|tojson }}</script>
+
+<div class="planner">
+  <section class="pl-build">
+    <div class="row"><select id="pl-hero" aria-label="Hero"><option value="">Pick a hero…</option></select><a class="only-sm pl-jump" href="#pl-shop">Shop ↓</a></div>
+    <div id="pl-summary" class="pl-summary"></div>
+    <ol id="pl-items" class="pl-items"></ol>
+    <p id="pl-empty" class="muted small">Tap items in the shop to add them, in the order you'd buy them.</p>
+    <details class="pl-totals" open><summary>Stats from items</summary><ul id="pl-stats" class="stats"></ul>
+      <p class="muted small">Always-on stats summed. Conditional and active effects aren't included; see each item.</p></details>
+    <form method="post" action="/planner/save" class="pl-save">
+      <input type="hidden" name="hero_id" id="pl-f-hero">
+      <input type="hidden" name="items" id="pl-f-items">
+      {% if saved %}<input type="hidden" name="build_id" value="{{ saved.id }}">{% endif %}
+      <input name="name" placeholder="Build name" value="{{ saved.name if saved else (source.hero_build.name if source else '') }}" maxlength="80">
+      <textarea name="notes" rows="2" placeholder="Notes (optional)">{{ saved.notes if saved and saved.notes else "" }}</textarea>
+      <div class="row">
+        <button type="submit" id="pl-save-btn">{{ "Save" if saved else "Save build" }}</button>
+        {% if saved %}<button type="submit" name="as_new" value="1" class="secondary">Save as new</button>{% endif %}
+        <button type="button" class="secondary" id="pl-share">Copy link</button>
+      </div>
+      <p class="muted small">{% if me %}Saved as {{ me.persona_name or me.account_id }}'s.{% else %}<a href="/me?next=/planner">Pick who you are</a> to keep builds per player.{% endif %}</p>
+    </form>
+    {% if saved %}<form method="post" action="/planner/{{ saved.id }}/delete" onsubmit="return confirm('Delete this saved build?')"><button class="link" type="submit">Delete saved build</button></form>{% endif %}
+  </section>
+
+  <section class="pl-shop" id="pl-shop">
+    <div class="filters">
+      <input type="search" id="pl-q" placeholder="Search items or stats">
+      <div class="seg" id="pl-slot">
+        <a data-slot="" class="on">All</a><a data-slot="weapon" class="slot-weapon">Weapon</a><a data-slot="vitality" class="slot-vitality">Vitality</a><a data-slot="spirit" class="slot-spirit">Spirit</a>
+      </div>
+      <div class="seg" id="pl-tier"><a data-tier="" class="on">Any</a><a data-tier="1">T1</a><a data-tier="2">T2</a><a data-tier="3">T3</a><a data-tier="4">T4</a><a data-tier="5">T5</a></div>
+    </div>
+    <div id="pl-grid" class="pl-grid"><p class="muted">Loading items…</p></div>
+  </section>
+</div>
+
+{% if saved_builds %}
+<h2>Saved builds</h2>
+<ul class="build-list">
+  {% for b in saved_builds %}
+  {% set h = game.heroes_by_id.get(b.hero_id) if game else None %}
+  <li><a class="build-row{{ ' current' if saved and saved.id == b.id }}" href="/planner/{{ b.id }}">{% if h and h.icon %}<img src="{{ h.icon }}" alt="" width="36" height="36" loading="lazy">{% endif %}<div class="build-main"><strong>{{ b.name }}</strong><span class="muted small">{{ h.name if h else "" }}{% if b.account_id in accounts %} · {{ accounts[b.account_id].persona_name or b.account_id }}{% endif %} · <time datetime="{{ b.updated_at|iso }}" data-local>{{ b.updated_at|day }}</time></span></div></a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+<script src="/static/planner.js" defer></script>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_builds.html" import build_list %}
+{% block title %}Builds · Deadlock Analytics{% endblock %}
+{% block content %}
+<section class="head">
+  <h1>Builds</h1>
+  {% if me %}<a href="/players/{{ me.account_id }}/builds">{{ me.persona_name or me.account_id }}'s builds →</a>{% endif %}
+</section>
+<p class="muted small">Builds people published in the game's build browser, through <a href="https://deadlock-api.com">deadlock-api</a>.</p>
+<form class="filters" method="get" action="/builds">
+  <select name="hero" onchange="this.form.submit()">
+    <option value="">All heroes</option>
+    {% for h in hero_list %}<option value="{{ h.id }}"{% if hero == h.id %} selected{% endif %}>{{ h.name }}</option>{% endfor %}
+  </select>
+  <select name="sort" onchange="this.form.submit()">
+    {% for key, label in sorts.items() %}<option value="{{ key }}"{% if sort == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <input type="search" name="q" value="{{ q }}" placeholder="Search build names">
+  <button type="submit">Search</button>
+</form>
+{% if error %}<p class="neg small">{{ error }}</p>{% endif %}
+{{ build_list(builds, game) }}
+{% if not builds and not error %}<p class="muted">No builds found.</p>{% endif %}
+<div class="pager">
+  {% if start > 0 %}<a href="?hero={{ hero or '' }}&amp;sort={{ sort }}&amp;q={{ q|urlencode }}&amp;start={{ [start - 30, 0]|max }}">← Previous</a>{% else %}<span></span>{% endif %}
+  {% if builds|length == 30 %}<a href="?hero={{ hero or '' }}&amp;sort={{ sort }}&amp;q={{ q|urlencode }}&amp;start={{ start + 30 }}">Next →</a>{% endif %}
+</div>
+{% endblock %}

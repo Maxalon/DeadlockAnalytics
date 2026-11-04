@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Patches · Deadlock Analytics{% endblock %}
+{% block content %}
+<h1>Game updates</h1>
+<p class="muted small">The site checks the game's version every few minutes and reloads items and heroes when it changes{% if check %}; last check <time datetime="{{ check.last_finished_at|iso }}" data-local>{{ check.last_finished_at|day }}</time>{% if check.last_error %} — <span class="neg">{{ check.last_error }}</span>{% endif %}{% endif %}.</p>
+{% if versions %}
+<table class="narrow">
+  <thead><tr><th>Version</th><th>Built by Valve</th><th>Noticed</th><th>Game data</th></tr></thead>
+  <tbody>
+  {% for v in versions %}
+  <tr><td class="num">{{ v.client_version }}</td><td>{{ (v.version_datetime or "")|replace("T", " ") }}</td><td><time datetime="{{ v.seen_at|iso }}" data-local>{{ v.seen_at|day }}</time></td>
+    <td>{% if v.data_at %}<time datetime="{{ v.data_at|iso }}" data-local>{{ v.data_at|day }}</time>{% else %}<span class="muted">waiting for deadlock-api</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="empty">No version seen yet.</p>{% endif %}
+<h2>Patch notes</h2>
+{% if error %}<p class="neg small">{{ error }}</p>{% endif %}
+<ul class="patch-list">
+  {% for n in notes %}<li><a href="{{ n.link }}" rel="noreferrer" target="_blank">{{ n.title }}</a> <span class="muted small">{{ n.date }}</span></li>{% endfor %}
+</ul>
+{% endblock %}
