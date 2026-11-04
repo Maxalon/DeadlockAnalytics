@@ -270,7 +270,8 @@ def test_build_browser(tmp_path):
 
 def test_build_browser_when_deadlock_api_is_down(tmp_path):
     c, _ = make_client(tmp_path, api=GameApi(fail_builds=True))
-    assert "answer: down" in c.get(f"/builds?hero={HAZE}").text
+    page = c.get(f"/builds?hero={HAZE}").text
+    assert "answer; try again" in page and "down" not in page
 
 
 class PublishingFetcher:

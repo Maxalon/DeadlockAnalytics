@@ -27,6 +27,16 @@ BUILD_SORTS = {
     "favorites": "Most favourited",
     "updated_at": "Recently updated",
 }
+# What the editor says when publishing fails, per fetcher error code.
+PUBLISH_ERRORS = {
+    "quota": (429, "The bot's daily budget for publishing builds is used up; try again tomorrow."),
+    "not_ready": (503, "The Steam bot isn't connected to the game right now; try again later."),
+    "unreachable": (502, "The Steam bot (fetcher) couldn't be reached; see its log."),
+    "timeout": (504, "The game didn't answer; try again in a moment."),
+    "conflict": (409, "The build changed in the game since it was published; use “Save as new”, then publish."),
+    "bad_request": (400, "The game refused the build; check the name and description length."),
+}
+API_DOWN = "deadlock-api didn't answer; try again in a moment."
 PLAYER_BUILDS_MAX_AGE_S = 86400
 CACHE_S = 300
 
@@ -172,7 +182,8 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
                 hero_id, build_id = (int(x) for x in build.split("/", 1))
                 b = cache.get(("build", hero_id, build_id), lambda: api.build(hero_id, build_id))
             except (ValueError, httpx.HTTPError) as exc:
-                raise HTTPException(404, f"build {build} not available: {exc}") from exc
+                log.info("build %s not available: %s", build, exc)
+                raise HTTPException(404, f"build {build} is not available") from exc
             hb = b.get("hero_build") or {}
             state = {
                 "hero": hero_id,
@@ -280,8 +291,10 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         try:
             result = fetcher.publish_build(body)
         except FetcherError as exc:
-            status = {"quota": 429, "not_ready": 503, "conflict": 409, "bad_request": 400}.get(exc.code, 502)
-            return JSONResponse({"detail": str(exc)}, status_code=status)
+            # The details stay in the log: the fetcher's messages can name internal hosts.
+            log.warning("publishing saved build %s failed: %s (%s)", build_id, exc, exc.code)
+            status, message = PUBLISH_ERRORS.get(exc.code, PUBLISH_ERRORS["unreachable"])
+            return JSONResponse({"detail": message}, status_code=status)
         with transaction(db()) as conn:
             conn.execute(
                 "UPDATE saved_builds SET game_build_id = ?, game_version = ? WHERE id = ?",
@@ -342,7 +355,8 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         try:
             found = cache.get(("builds", tuple(sorted(params.items()))), lambda: api.builds(**params))
         except httpx.HTTPError as exc:
-            found, error = [], f"deadlock-api didn't answer: {exc}"
+            log.warning("build search failed: %s", exc)
+            found, error = [], API_DOWN
         return page(
             request,
             "builds.html",
@@ -363,9 +377,11 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         try:
             b = cache.get(("build", hero_id, build_id), lambda: api.build(hero_id, build_id))
         except httpx.HTTPStatusError as exc:
-            raise HTTPException(404 if exc.response.status_code == 404 else 502, str(exc)) from exc
+            missing = exc.response.status_code == 404
+            raise HTTPException(404 if missing else 502, "build not found" if missing else API_DOWN) from exc
         except httpx.HTTPError as exc:
-            raise HTTPException(502, str(exc)) from exc
+            log.warning("build %s/%s failed: %s", hero_id, build_id, exc)
+            raise HTTPException(502, API_DOWN) from exc
         data = data_or_none()
         hero = data["heroes_by_id"].get(hero_id) if data else None
         details = builds.details_of(b)
@@ -392,7 +408,8 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
             try:
                 jobs.refresh_player_builds(db(), api, account_id)
             except httpx.HTTPError as exc:
-                error = error or f"deadlock-api didn't answer: {exc}"
+                log.warning("builds of %s failed: %s", account_id, exc)
+                error = error or API_DOWN
             row = db().execute("SELECT * FROM player_builds WHERE account_id = ?", (account_id,)).fetchone()
         builds = build_rows(json.loads(row["json"])) if row else []
         builds.sort(key=lambda b: b["updated"] or 0, reverse=True)
@@ -413,7 +430,8 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         try:
             jobs.refresh_player_builds(db(), api, account_id, live=True)
         except httpx.HTTPError as exc:
-            return RedirectResponse(f"/players/{account_id}/builds?error={quote(str(exc)[:200])}", status_code=303)
+            log.warning("live builds of %s failed: %s", account_id, exc)
+            return RedirectResponse(f"/players/{account_id}/builds?error={quote(API_DOWN)}", status_code=303)
         return RedirectResponse(f"/players/{account_id}/builds", status_code=303)
 
     # ---- patches -----------------------------------------------------------------------------
@@ -424,7 +442,8 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         try:
             notes = cache.get("patches", api.patches)
         except httpx.HTTPError as exc:
-            notes, error = [], f"deadlock-api didn't answer: {exc}"
+            log.warning("patch notes failed: %s", exc)
+            notes, error = [], API_DOWN
         notes = [
             {"title": n.get("title"), "date": (n.get("pub_date") or "")[:10], "link": n.get("link")}
             for n in notes
