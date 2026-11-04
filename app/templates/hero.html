@@ -5,7 +5,7 @@
 <section class="hero-banner" style="--bg-img: url('{{ hero.background or hero.card }}')">
   <img class="portrait" src="{{ hero.card or hero.icon }}" alt="">
   <div>
-    <h1>{{ hero.name }} {% if hero.new %}<i class="badge-new">New</i>{% endif %}</h1>
+    <h1>{{ hero.name }}</h1>
     {% if hero.role %}<p class="role">{{ hero.role|safe }}</p>{% endif %}
     <p class="muted small">{{ hero.tags|join(" · ") }}{% if hero.complexity %} · complexity {{ hero.complexity }}/3{% endif %}</p>
     <div class="actions"><a class="btn" href="/planner?hero={{ hero.id }}">Create build</a><a class="btn ghost" href="/builds?hero={{ hero.id }}">Builds</a></div>

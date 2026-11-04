@@ -374,10 +374,10 @@ def test_builds_format():
     assert len(cat["name"]) == builds.MAX_NAME and cat["mods"] == [{"ability_id": 5, "annotation": "hi"}]
 
 
-def test_tooltips_and_new_heroes():
+def test_tooltips_and_released_heroes():
     violet = {**copy.deepcopy(GAME["heroes"][0]), "id": 86, "name": "Violet", "in_development": True}
     data = gamedata.normalise(GAME["items"], GAME["heroes"] + [violet])
-    assert data["heroes_by_id"][86]["new"] is True and not data["heroes_by_id"][HAZE]["new"]
+    assert 86 in data["heroes_by_id"]  # released, though Valve still flags it in_development
     toxic = data["items_by_id"][TOXIC]["tooltip"]
     assert toxic[0]["type"] == "passive" and "Bleed" in toxic[0]["text"]
     assert {p["label"] for p in toxic[0]["big"]} >= {"Bleed Damage", "Incoming Healing"}
