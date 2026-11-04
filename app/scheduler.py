@@ -146,6 +146,14 @@ class Scheduler:
                     jobs._record(conn, "heroes", int(time.time()), None)
                 elif not conn.execute("SELECT 1 FROM ranks LIMIT 1").fetchone():
                     jobs.refresh_ranks(conn, self.api)  # databases from before ranks were stored
+                if self._due(conn, "game_data", self.settings.game_data_interval_s):
+                    started = int(time.time())
+                    try:
+                        jobs.refresh_game_data(conn, self.api)
+                        jobs._record(conn, "game_data", started, None)
+                    except Exception as exc:
+                        log.warning("game data check failed: %s", exc)
+                        jobs._record(conn, "game_data", started, str(exc))
                 if self._due(conn, "baselines", self.settings.baseline_interval_s):
                     jobs.compute_baselines(conn, self.api, self.settings)
                 with self._lock:

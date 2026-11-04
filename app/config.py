@@ -25,6 +25,8 @@ class Settings:
     baseline_interval_s: int = field(default_factory=lambda: _int("BASELINE_INTERVAL_S", 86400))
     baseline_days: int = field(default_factory=lambda: _int("BASELINE_DAYS", 7))
     baseline_max_matches: int = field(default_factory=lambda: _int("BASELINE_MAX_MATCHES", 30000))
+    # How often to check for a new game version (one small request); game data follows it.
+    game_data_interval_s: int = field(default_factory=lambda: _int("GAME_DATA_INTERVAL_S", 900))
     # Backfill for a newly added account starts here (Valve began reporting MVP ranks on 2026-01-06).
     backfill_since: int = field(default_factory=lambda: _int("BACKFILL_SINCE_UNIX", 1767657600))
     # Set to 0 to run the web UI without the background jobs (e.g. in tests).

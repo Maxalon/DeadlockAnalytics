@@ -32,6 +32,9 @@
 {% if bot_enabled %}
 <h2 id="bot">Steam bot friends</h2>
 <p class="muted small">Players add the bot as a Steam friend so it can read their match history. Requests wait here until you handle them; the bot never accepts one on its own.</p>
+{% if bot_status %}
+<p class="small">Bot: {% if bot_status.gc_ready %}<span class="pos">in game</span>{% else %}<span class="neg">{{ "logged on, no game session" if bot_status.logged_in else "offline" }}</span>{% if bot_status.not_ready_since %} since {{ bot_status.not_ready_since }}{% endif %}{% if bot_status.last_error %} — {{ bot_status.last_error }}{% endif %}. <span class="muted">The fetcher restarts itself when it stays like this (not when it needs a new login).</span>{% endif %}</p>
+{% endif %}
 {% if bot_status and bot_status.salts_budget %}
 <p class="small">Steam budget left today:
   {{ bot_status.salts_budget.remaining }}/{{ bot_status.salts_budget.limit }} match details{% if bot_status.salts_budget.next_free_at %} (next at {{ bot_status.salts_budget.next_free_at }}){% endif %},

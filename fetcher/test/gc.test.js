@@ -323,3 +323,63 @@ test('daily budgets: salts and history pages stop before Steam is asked once use
   assert.strictEqual(sent(MSG.HISTORY), 1);
   gc.stop();
 });
+
+test('GC going down for an update: hello again until it welcomes us back', async () => {
+  const client = new FakeSteam();
+  const gc = session(client);
+  gc.start();
+  await new Promise((r) => gc.once('ready', r));
+  const hellos = client.sent.filter((m) => m === MSG.HELLO).length;
+  client.emit('receivedFromGC', APP_ID, MSG.CONNECTION_STATUS, enc(proto.ConnectionStatus, { status: 1 }));
+  assert.strictEqual(gc.status().gc_ready, false);
+  assert.ok(gc.status().not_ready_since);
+  await new Promise((r) => gc.once('ready', r));
+  assert.ok(client.sent.filter((m) => m === MSG.HELLO).length > hellos);
+  assert.strictEqual(gc.status().not_ready_since, null);
+  // HAVE_SESSION changes nothing
+  client.emit('receivedFromGC', APP_ID, MSG.CONNECTION_STATUS, enc(proto.ConnectionStatus, { status: 0 }));
+  assert.strictEqual(gc.status().gc_ready, true);
+  gc.stop();
+});
+
+test('watchdog: stuck after a long time without a GC session, unless waiting on purpose', async () => {
+  let t = 0;
+  const client = new FakeSteam();
+  client.sendToGC = () => {}; // the GC never answers
+  const gc = session(client, { now: () => t });
+  gc.start();
+  await new Promise((r) => client.once('loggedOn', () => setImmediate(r)));
+  t = 10 * 60000;
+  assert.strictEqual(gc.stuckReason(15 * 60000), null);
+  t = 16 * 60000;
+  assert.match(gc.stuckReason(15 * 60000), /no GC session for 16 min/);
+  // someone plays on the account: a restart wouldn't help
+  client.emit('playingState', true, 730);
+  assert.strictEqual(gc.stuckReason(15 * 60000), null);
+  gc.stop();
+});
+
+test('watchdog: a saved login that needs renewing is not a reason to restart', async () => {
+  let t = 0;
+  const client = new FakeSteam();
+  client.logOn = () => setImmediate(() => client.emit('error', Object.assign(new Error('Revoked'), { eresult: SteamUser.EResult.Revoked })));
+  const gc = session(client, { now: () => t });
+  gc.start();
+  await new Promise((r) => setImmediate(() => setImmediate(r)));
+  t = 60 * 60000;
+  assert.strictEqual(gc.stuckReason(15 * 60000), null);
+  gc.stop();
+});
+
+test('watchdog: Steam not answering liveness checks', async () => {
+  const { client, gc } = await loggedIn({});
+  client.getPersonas = async () => { throw new Error('timed out'); };
+  assert.strictEqual(await gc.probeSteam(), false);
+  assert.strictEqual(gc.stuckReason(), null);
+  await gc.probeSteam();
+  assert.match(gc.stuckReason(), /Steam stopped answering/);
+  client.getPersonas = async () => {};
+  assert.strictEqual(await gc.probeSteam(), true);
+  assert.strictEqual(gc.stuckReason(), null);
+  gc.stop();
+});

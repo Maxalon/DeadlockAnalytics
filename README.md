@@ -53,6 +53,28 @@ Accounts are added and removed at `/accounts` (SteamID3, SteamID64 or a
 `steamcommunity.com/profiles/…` link). There is no login, so run it on a private network or
 behind an authenticating proxy.
 
+## Items, heroes and builds
+
+For theorycrafting on the go (installable on Android: open the site in Chrome, "Add to Home
+screen"; the last game data stays available offline):
+
+- `/items` and `/heroes`: every shop item with its stats, description and upgrade path; every
+  hero's abilities with their 1/2/5 AP upgrades, weapon, base stats, per-level gains and the
+  investment payoffs of each shop category.
+- `/planner`: pick a hero, add items in buy order; it shows souls spent per category, the
+  investment bonus reached and how far the next one is, components that were upgraded away, and
+  the summed always-on stats. Builds are saved in the database per player.
+- `/builds`: the builds people published in the game, searchable per hero (deadlock-api's mirror
+  of Valve's build browser); each opens in the planner. `/players/<id>/builds` shows a tracked
+  player's own in-game builds; "Refresh from Steam" asks Valve's build service live.
+- "Who are you?" in the menu picks one of the tracked accounts for this device; builds and the
+  planner then default to that player.
+
+Game data is deadlock-api's datamined copy of the game files. The site checks the game version
+every 15 minutes (`GAME_DATA_INTERVAL_S`) and reloads items and heroes when it changes; until
+deadlock-api has rebuilt its copy for the new version it keeps the old one and looks again
+hourly. `/patches` lists the versions seen and Valve's patch notes.
+
 ## Running it
 
 CI publishes `ghcr.io/maxalon/deadlockanalytics:latest` on every push to `main`.
@@ -69,6 +91,11 @@ The fetcher needs a Steam account with Deadlock access, logged in once with
 `docker compose run --rm -it fetcher npm run login`. Players then send it a friend request, which
 you accept, decline or block at `/accounts`; the bot never accepts one on its own.
 Until then the site falls back to deadlock-api, and `/accounts` shows which source each sync used.
+If the bot loses its game session (the Game Coordinator restarts on every game update) it says
+hello again until the GC takes it back; if it stays without one for 15 minutes, or Steam stops
+answering its checks, the fetcher exits and Docker's restart policy starts it fresh
+(`BOT_MAX_OFFLINE_MINUTES`). It doesn't while it waits for a new `npm run login` or for someone
+playing on the bot account.
 
 To keep the container up to date, either enable the systemd timer in `deploy/`, or use the
 optional `deploy` job in CI, which runs `deploy/remote-deploy.sh` on the host over SSH. That job

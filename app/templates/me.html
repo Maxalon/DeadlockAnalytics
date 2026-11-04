@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Who are you? · Deadlock Analytics{% endblock %}
+{% block content %}
+<h1>Who are you?</h1>
+<p class="muted">Pick yourself to make your builds, saved plans and stats the default. Only the tracked accounts can be picked; add more at <a href="/accounts">Accounts</a>. Remembered on this device.</p>
+{% if not accounts %}
+<p class="empty">No accounts tracked yet. <a href="/accounts">Add one</a>.</p>
+{% else %}
+<div class="cards">
+  {% for a in accounts %}
+  <a class="card pick{{ ' current' if me and me.account_id == a.account_id }}" href="/me?set={{ a.account_id }}&amp;next={{ next | urlencode }}">
+    <div class="who">
+      {% if a.avatar_url %}<img src="{{ a.avatar_url }}" alt="" width="48" height="48">{% endif %}
+      <div><strong>{{ a.persona_name or a.account_id }}</strong><span class="muted small">{{ a.games or 0 }} matches</span></div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% if me %}<p><a class="small" href="/me?set=0&amp;next={{ next | urlencode }}">Nobody (forget the choice on this device)</a></p>{% endif %}
+{% endif %}
+{% endblock %}

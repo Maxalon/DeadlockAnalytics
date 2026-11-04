@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import charts, queries, scoring
+from . import charts, queries, scoring, theorycraft
 from .api import DeadlockApi
 from .config import Settings
 from .db import connect, init, transaction
@@ -84,6 +84,8 @@ def create_app(
     def render(request: Request, name: str, **ctx):
         ctx.setdefault("heroes", queries.heroes(db()))
         ctx["theme"] = "light" if request.cookies.get("theme") == "light" else "dark"
+        me = theorycraft.me_id(request)
+        ctx.setdefault("me", me and db().execute("SELECT * FROM accounts WHERE account_id = ?", (me,)).fetchone())
         return templates.TemplateResponse(request, name, ctx)
 
     @app.get("/", response_class=HTMLResponse)
@@ -248,6 +250,8 @@ def create_app(
         resp = RedirectResponse("/" + next.lstrip("/") if same_site else "/", status_code=303)
         resp.set_cookie("theme", "light" if to == "light" else "dark", max_age=365 * 86400, samesite="lax")
         return resp
+
+    theorycraft.register(app, render, db, scheduler.api, HERE / "static")
 
     @app.get("/healthz")
     def healthz():

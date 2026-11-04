@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_game.html" import no_data %}
+{% block title %}Heroes · Deadlock Analytics{% endblock %}
+{% block content %}
+<h1>Heroes</h1>
+{{ no_data(game) }}
+<div class="hero-grid">
+  {% for h in hero_list %}
+  <a class="hero-tile" href="/heroes/{{ h.id }}">
+    {% if h.card or h.icon %}<img src="{{ h.card or h.icon }}" alt="" loading="lazy">{% endif %}
+    <span>{{ h.name }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -24,10 +24,11 @@ class DeadlockApi:
             headers["X-API-KEY"] = api_key
         self.client = client or httpx.Client(base_url=base_url, headers=headers, timeout=180)
 
-    def _get(self, path: str, params: dict) -> httpx.Response:
-        for attempt in range(5):
+    def _get(self, path: str, params: dict, attempts: int = 5) -> httpx.Response:
+        """`attempts`: tries on 429/5xx, waiting longer each time; 1 for what a page waits on."""
+        for attempt in range(attempts):
             resp = self.client.get(path, params=params)
-            if resp.status_code == 429 or resp.status_code >= 500:
+            if (resp.status_code == 429 or resp.status_code >= 500) and attempt < attempts - 1:
                 time.sleep(min(60, 5 * 2**attempt))
                 continue
             resp.raise_for_status()
@@ -77,3 +78,32 @@ class DeadlockApi:
         if not account_ids:
             return []
         return self._get("/v1/players/rank", {"account_ids": ",".join(map(str, account_ids))}).json()
+
+    # Game data (datamined from the game files by deadlock-api, rebuilt for each game update).
+    def steam_info(self) -> dict:
+        """The game's current version: client_version, version_datetime, ..."""
+        return self._get("/v1/assets/steam-info", {}).json()
+
+    def asset_items(self) -> list[dict]:
+        return self._get("/v1/assets/items", {}).json()
+
+    def asset_heroes(self) -> list[dict]:
+        return self._get("/v1/assets/heroes", {"only_active": "true"}).json()
+
+    def generic_data(self) -> dict:
+        return self._get("/v1/assets/generic-data", {}).json()
+
+    def patches(self) -> list[dict]:
+        return self._get("/v1/patches", {}, attempts=1).json()
+
+    # Builds people made in the game (Valve's build browser, mirrored by deadlock-api).
+    def builds(self, **filters) -> list[dict]:
+        params = {k: v for k, v in filters.items() if v not in (None, "")}
+        return self._get("/v1/builds", params, attempts=1).json()
+
+    def build(self, hero_id: int, build_id: int) -> dict:
+        return self._get(f"/v1/builds/{hero_id}/{build_id}", {}, attempts=1).json()
+
+    def builds_by_author(self, account_id: int) -> list[dict]:
+        """All builds of a player, asked from Valve live (20 req/min per IP: only on request)."""
+        return self._get(f"/v1/builds/by-author/{account_id}", {}, attempts=1).json()

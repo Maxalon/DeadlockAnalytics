@@ -151,6 +151,44 @@ CREATE TABLE IF NOT EXISTS job_runs (
     last_finished_at INTEGER,
     last_error      TEXT
 );
+
+-- deadlock-api's datamined game files, stored as they come: items, heroes, generic (shop prices).
+CREATE TABLE IF NOT EXISTS game_data (
+    kind            TEXT PRIMARY KEY,
+    client_version  INTEGER,                      -- the game version they were fetched for
+    fetched_at      INTEGER NOT NULL,
+    hash            TEXT NOT NULL,                -- of `json`, to tell a rebuilt copy from the old one
+    json            TEXT NOT NULL
+);
+
+-- Every game version seen (Steam's client version, e.g. 6848), and when.
+CREATE TABLE IF NOT EXISTS game_versions (
+    client_version  INTEGER PRIMARY KEY,
+    version_datetime TEXT,                        -- when Valve built it
+    seen_at         INTEGER NOT NULL,             -- when we noticed it
+    data_at         INTEGER                       -- when game data for it arrived
+);
+
+-- Builds made in the planner, per tracked player (or nobody).
+CREATE TABLE IF NOT EXISTS saved_builds (
+    id              INTEGER PRIMARY KEY,
+    account_id      INTEGER,
+    hero_id         INTEGER NOT NULL,
+    name            TEXT NOT NULL,
+    items           TEXT NOT NULL,                -- JSON list of item ids, in buy order
+    notes           TEXT,
+    client_version  INTEGER,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+
+-- A tracked player's own in-game builds, as deadlock-api last returned them.
+CREATE TABLE IF NOT EXISTS player_builds (
+    account_id      INTEGER PRIMARY KEY,
+    fetched_at      INTEGER NOT NULL,
+    source          TEXT NOT NULL,                -- search (deadlock-api's copy) | steam (asked Valve live)
+    json            TEXT NOT NULL
+);
 """
 )
 

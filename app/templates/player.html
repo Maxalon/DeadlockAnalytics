@@ -7,6 +7,7 @@
   <div class="who">
     {% if account and account.avatar_url %}<img src="{{ account.avatar_url }}" alt="" width="56" height="56">{% endif %}
     <h1>{{ account.persona_name if account and account.persona_name else account_id }}</h1>
+    {% if account %}<a class="small" href="/players/{{ account_id }}/builds">Builds →</a>{% endif %}
   </div>
   {% if account %}
   <div class="sync">

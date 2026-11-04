@@ -1,0 +1,22 @@
+{# Shared bits of the item / hero / build pages. #}
+{% macro item_icon(item, size=36) -%}
+  <img class="item-icon slot-{{ item.slot }}" src="{{ item.image }}" alt="" width="{{ size }}" height="{{ size }}" loading="lazy">
+{%- endmacro %}
+
+{% macro item_chip(item, note=None) -%}
+  <a class="item-chip slot-{{ item.slot }}" href="/items/{{ item.id }}" title="{{ item.name }}{% if note %} — {{ note }}{% endif %}">
+    {{ item_icon(item, 28) }}<span>{{ item.name }}</span>{% if item.active %}<i class="tag">active</i>{% endif %}
+  </a>
+{%- endmacro %}
+
+{% macro stats_list(stats, limit=99) -%}
+  <ul class="stats">
+    {%- for s in stats[:limit] %}
+    <li class="{{ 'cond' if s.conditional }}{{ ' given' if s.stat and not s.conditional }}"><b>{{ s.text }}</b> {{ s.label }}{% if s.conditional %} <span class="muted">(conditional)</span>{% endif %}</li>
+    {%- endfor %}
+  </ul>
+{%- endmacro %}
+
+{% macro no_data(game) -%}
+  {% if not game %}<p class="empty">Game data hasn't been loaded yet. It's fetched in the background a minute after the site starts and again after every game update; reload in a moment.</p>{% endif %}
+{%- endmacro %}

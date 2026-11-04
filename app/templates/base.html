@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1b1b1f">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <title>{% block title %}Deadlock Analytics{% endblock %}</title>
   {% block head %}{% endblock %}
   <link rel="stylesheet" href="/static/style.css">
@@ -12,8 +15,14 @@
     <a class="brand" href="/">Deadlock Analytics</a>
     <nav>
       <a href="/">Players</a>
+      <a href="/builds">Builds</a>
+      <a href="/planner">Planner</a>
+      <a href="/items">Items</a>
+      <a href="/heroes">Heroes</a>
+      <a href="/patches">Patches</a>
       <a href="/accounts">Accounts</a>
       <a href="/model">MVP model</a>
+      <a class="me" href="/me?next={{ request.url.path | urlencode }}" title="Who's using this? Builds and the planner open for this player">{% if me %}{% if me.avatar_url %}<img src="{{ me.avatar_url }}" alt="" width="18" height="18">{% endif %}{{ me.persona_name or me.account_id }}{% else %}Who are you?{% endif %}</a>
       <a class="theme" href="/theme?to={{ 'dark' if theme == 'light' else 'light' }}&amp;next={{ request.url.path | urlencode }}">{{ "Dark" if theme == "light" else "Light" }} mode</a>
     </nav>
   </header>
@@ -27,6 +36,7 @@
       t.textContent = d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
       t.title = d.toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" });
     }
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   </script>
 </body>
 </html>
