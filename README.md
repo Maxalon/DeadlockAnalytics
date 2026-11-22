@@ -60,6 +60,9 @@ screen"; the last game data stays available offline). Styled after the game's ow
 
 - `/items`: the shop, by category and tier. Tapping an item (hovering on desktop) shows its
   tooltip as in the game: stats, passive/active blocks with cooldowns, what it builds from and into.
+  Values that scale carry the game's `×0.61` badge (per point of spirit power, per boon, or with
+  melee or weapon damage); in the build editor, spirit-scaled values are shown at the build's
+  spirit power.
 - `/heroes/<id>`: weapon, vitality and spirit stats, per-level gains, every ability with its
   tooltip and 1/2/5 AP upgrades, and the investment payoffs of each shop category.
 - `/builds`: pick a hero, then browse the builds people published in the game (deadlock-api's

@@ -410,3 +410,76 @@ def test_gamedata_etag_follows_the_content(conn, monkeypatch):
     original = gamedata.planner_json
     monkeypatch.setattr(gamedata, "planner_json", lambda d, v: {**original(d, v), "extra": 1})
     assert gamedata.GameData().get(conn)["etag"] != before["etag"]
+
+
+def test_scaling_and_distances():
+    data = gamedata.normalise(GAME["items"], GAME["heroes"], GAME["generic"])
+    dagger = next(a for a in data["heroes_by_id"][HAZE]["abilities"] if a["name"] == "Sleep Dagger")
+    props = {p["key"]: p for s in dagger["tooltip"] for p in s["big"] + s["lines"]}
+    # The game's "×2.2" next to the damage: what each point of spirit power adds.
+    assert props["Damage"]["value"] == "65"
+    assert props["Damage"]["scale"] == {
+        "stat": "spirit",
+        "per": 2.2,
+        "text": "2.2",
+        "base": 65.0,
+        "signed": False,
+        "postfix": "",
+    }
+    # Which bonuses apply to a value (duration, range, cooldown) isn't scaling, nor is a zero factor.
+    assert (
+        gamedata.scaling({"scale_function": {"class_name": "scale_function_tech_duration", "stat_scale": 1.0}}) is None
+    )
+    assert (
+        gamedata.scaling(
+            {
+                "scale_function": {
+                    "class_name": "scale_function_single_stat",
+                    "specific_stat_scale_type": "ETechCooldown",
+                    "stat_scale": -1.0,
+                }
+            }
+        )
+        is None
+    )
+    fixation = {
+        "class_name": "scale_function_ability_weapon_damage",
+        "specific_stat_scale_type": "EBaseWeaponDamageIncrease",
+        "stat_scale": 0.0,
+    }
+    assert gamedata.scaling({"scale_function": fixation}) is None
+    assert gamedata.scaling({"scale_function": {**fixation, "stat_scale": 0.7}})["stat"] == "weapon"
+    heal = {"class_name": "scale_function_healing_boon_scale", "stat_scale": 0.06}
+    assert gamedata.scaling({"scale_function": heal}) == {"stat": "boon", "per": 0.06, "text": "0.06"}
+
+    # Distances come with their unit in the value; a value that is only scaling still shows.
+    props = {
+        "Range": {"value": "14m", "label": "Range", "postfix": "m"},
+        "Radius": {"value": "0m", "label": "Radius"},
+        "Heal": {
+            "value": "0",
+            "label": "Heal",
+            "scale_function": {"class_name": "scale_function_healing_spirit_scale", "stat_scale": 0.6},
+        },
+    }
+    assert gamedata.prop(props, "Range")["value"] == "14m"
+    assert gamedata.prop(props, "Radius") is None
+    assert gamedata.prop(props, "Heal")["value"] == "0" and gamedata.prop(props, "Heal")["scale"]["text"] == "0.6"
+
+    # An upgrade that improves scaling says by how much (Valve's text only says "improved").
+    ability = {
+        "id": 1,
+        "name": "Keg",
+        "properties": {"Impact": {"value": 40.0, "label": "Impact Damage", "scale_function": heal}},
+        "upgrades": [
+            {
+                "property_upgrades": [
+                    {"name": "Impact", "bonus": 0.25, "scale_stat_filter": "ETechPower", "upgrade_type": "EAddToScale"},
+                    {"name": "Impact", "bonus": "2m"},
+                ]
+            }
+        ],
+    }
+    up = gamedata._ability(ability)["upgrades"][0]
+    assert up["scales"] == [{"stat": "spirit", "label": "Impact Damage", "text": "+0.25"}]
+    assert up["bonuses"] == ["Impact Damage +2m"]

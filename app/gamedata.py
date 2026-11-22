@@ -20,7 +20,6 @@ INVESTMENT = {
     "vitality": ("Base health", "%"),
     "spirit": ("Spirit power", ""),
 }
-_ZERO = {"", "0", "0.0", "-1", "-1.0"}
 # Valve's tooltip markup: keep these tags (without attributes but `class`), escape the rest.
 _TAG = re.compile(r"<(/?)(span|br|b|i|strong|em|p)\b([^>]*)>", re.I)
 _CLASS = re.compile(r"""class\s*=\s*["']([\w\s-]*)["']""")
@@ -29,6 +28,29 @@ _SVG = re.compile(r"<svg\b.*?</svg>\s*", re.I | re.S)
 # Panorama layout tags around inline icons: dropped, their content kept.
 _PANEL = re.compile(r"</?Panel\b[^>]*>", re.I)
 # Inline stat icons: kept only when they come from deadlock-api's asset host.
+_UNIT = re.compile(r"^(-?\d+(?:\.\d+)?|-?\.\d+)\s*(m|s)$")
+# The game's scale functions that add `stat_scale` per point of one stat, and which stat that is:
+# named by the function's stat type, else implied by its class. (Other types only say which of
+# range, duration or cooldown bonuses apply to the value.)
+_SCALE_STATS = {
+    "ETechPower": "spirit",
+    "ELevelUpBoons": "boon",
+    "ELightMeleeDamage": "melee",
+    "EHeavyMeleeDamage": "melee",
+    "EBaseWeaponDamageIncrease": "weapon",
+    "EWeaponDamageScale": "weapon",
+}
+_SCALE_CLASSES = {
+    "scale_function_tech_damage": "spirit",
+    "scale_function_healing_spirit_scale": "spirit",
+    "scale_function_healing_boon_scale": "boon",
+}
+_SCALE_FUNCTIONS = {
+    *_SCALE_CLASSES,
+    "scale_function_single_stat",
+    "scale_function_multi_stats",
+    "scale_function_ability_weapon_damage",
+}
 _IMG = re.compile(
     r"""<img\b[^>]*?\bsrc\s*=\s*["'](https://assets-bucket\.deadlock-api\.com/[\w./-]+)["'][^>]*>""", re.I
 )
@@ -76,23 +98,51 @@ def _fmt(value: float, signed: bool, postfix: str) -> str:
     return f"{text}{postfix or ''}"
 
 
+def _parse(raw) -> tuple[float | None, str]:
+    """A number and the unit written into it: distances come as "14m"."""
+    raw = str(raw if raw is not None else "").strip()
+    m = _UNIT.match(raw)
+    return (_num(m.group(1)), m.group(2)) if m else (_num(raw), "")
+
+
+def _value(p: dict) -> tuple[float | None, str]:
+    """A property's number and unit; None when it is unset (0, or the game's -1)."""
+    v, unit = _parse(p.get("value"))
+    return (None if v in (None, 0, -1) else v), p.get("postfix") or unit
+
+
+def scaling(p: dict) -> dict | None:
+    """What a property grows with, as the game's `×0.61` next to a value: each point of the
+    stat (spirit power, boons, ...) adds `per` to it."""
+    sf = p.get("scale_function") or {}
+    per = _num(sf.get("stat_scale"))
+    kind = sf.get("specific_stat_scale_type")
+    stat = _SCALE_STATS.get(kind) if kind else _SCALE_CLASSES.get(sf.get("class_name"))
+    if not per or not stat or sf.get("class_name") not in _SCALE_FUNCTIONS:
+        return None
+    return {"stat": stat, "per": per, "text": _coef(per)}
+
+
+def _coef(per: float) -> str:
+    return f"{per:.2f}".rstrip("0").rstrip(".") if abs(per) >= 0.1 else f"{per:.2g}"
+
+
 def item_stats(props: dict) -> list[dict]:
     """The item's tooltip numbers: labelled, non-zero properties."""
     out = []
     for key, p in (props or {}).items():
         label = p.get("label")
-        value = str(p.get("value", "")).strip()
-        if not label or value in _ZERO or _num(value) is None:
+        v, postfix = _value(p)
+        if not label or v is None:
             continue
-        v = _num(value)
         signed = "{s:sign}" in (p.get("prefix") or "") or bool(p.get("provided_property_type"))
         out.append(
             {
                 "key": key,
                 "label": label,
                 "value": v,
-                "postfix": p.get("postfix") or "",
-                "text": _fmt(v, signed, p.get("postfix") or ""),
+                "postfix": postfix,
+                "text": _fmt(v, signed, postfix),
                 # Summable into build totals: a stat the item gives the hero, always on.
                 "stat": p.get("provided_property_type"),
                 "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -116,23 +166,29 @@ def _description(raw: dict) -> dict:
 
 
 def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
-    """One property as the game shows it: `+12% Fire Rate`, with its icon; None if it is zero or unknown."""
+    """One property as the game shows it: `+12% Fire Rate`, with its icon and what it scales
+    with; None if it is unknown, or zero without scaling."""
     p = (props or {}).get(key)
     if not p:
         return None
-    value = str(p.get("value", "")).strip()
-    v = _num(value)
-    if v is None or value in _ZERO:
+    v, postfix = _value(p)
+    scale = scaling(p)
+    if v is None and not (scale and _parse(p.get("value"))[0] == 0):
         return None
+    v = v or 0.0
     signed = "{s:sign}" in (p.get("prefix") or "") or bool(p.get("provided_property_type"))
-    return {
+    out = {
         "key": key,
         "label": p.get("label") or p.get("postvalue_label") or stat_label(key),
-        "value": _fmt(v, signed, p.get("postfix") or ""),
+        "value": _fmt(v, signed, postfix),
         "icon": icon or p.get("icon"),
         "css": p.get("css_class") or "",
         "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
     }
+    if scale:
+        # The number itself too, so the editor can show the value at a build's spirit power.
+        out["scale"] = {**scale, "base": v, "signed": signed, "postfix": postfix}
+    return out
 
 
 _HEADER_PROPS = ("AbilityCooldown", "AbilityCharges")
@@ -167,11 +223,13 @@ def item_tooltip(raw: dict) -> list[dict]:
                 if kind != "innate" and key in _HEADER_PROPS + ("AbilityDuration",):
                     continue
                 lines.append(prop(props, key))
+        big = [b for b in big if b]
+        shown = {b["key"] for b in big}  # a section can list a property as a box and a line
         section = {
             "type": kind,
             "text": "<br>".join(text),
-            "big": [b for b in big if b],
-            "lines": [x for x in lines if x],
+            "big": big,
+            "lines": [x for x in lines if x and x["key"] not in shown],
         }
         if kind == "active" or (kind == "passive" and not raw.get("is_active_item")):
             section.update(_header(props))
@@ -242,14 +300,23 @@ def _ability(raw: dict | None) -> dict | None:
     stats = item_stats(raw.get("properties"))
     upgrades = []
     for n, up in enumerate(raw.get("upgrades") or []):
-        bonuses = []
+        bonuses, scales = [], []
         for pu in up.get("property_upgrades") or []:
             p = (raw.get("properties") or {}).get(pu.get("name"), {})
-            v = _num(pu.get("bonus"))
-            if v is not None:
-                label = p.get("label") or stat_label(pu.get("name", ""))
-                bonuses.append(f"{label} {_fmt(v, True, p.get('postfix') or '')}")
-        upgrades.append({"text": d["tiers"][n] if n < 3 else "", "bonuses": bonuses})
+            v, unit = _parse(pu.get("bonus"))
+            if not v:
+                continue
+            label = p.get("label") or stat_label(pu.get("name", ""))
+            kind = pu.get("upgrade_type")
+            if kind in ("EAddToScale", "EMultiplyScale"):
+                # Valve's text only says "improved spirit scaling": the number, next to it.
+                stat = _SCALE_STATS.get(pu.get("scale_stat_filter")) or (scaling(p) or {}).get("stat")
+                if stat:
+                    text = f"+{_coef(v)}" if kind == "EAddToScale" else f"×{_coef(v)}"
+                    scales.append({"stat": stat, "label": label, "text": text})
+            else:
+                bonuses.append(f"{label} {_fmt(v, True, p.get('postfix') or unit)}")
+        upgrades.append({"text": d["tiers"][n] if n < 3 else "", "bonuses": bonuses, "scales": scales})
     return {
         "id": raw["id"],
         "name": raw["name"],

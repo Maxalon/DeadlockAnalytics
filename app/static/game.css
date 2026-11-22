@@ -92,6 +92,14 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tip-line b { font-variant-numeric: tabular-nums; }
 .tip-line.cond { color: var(--muted); }
 .tip-innate .tip-line b { color: var(--c, var(--text)); }
+.scale { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: .72rem; font-weight: 700; line-height: 1.5; font-style: normal; font-variant-numeric: tabular-nums;
+  color: var(--sc); background: color-mix(in srgb, var(--sc) 18%, transparent); border: 1px solid color-mix(in srgb, var(--sc) 45%, transparent); white-space: nowrap; }
+.scale.s-spirit { --sc: var(--spirit); }
+.scale.s-weapon, .scale.s-melee { --sc: var(--weapon); }
+.scale.s-boon { --sc: var(--gold); }
+.tip-big b .scale { margin-left: 4px; vertical-align: 2px; }
+.tip-scale-note { margin: 0; padding: 2px 12px 8px; font-size: .75rem; color: var(--muted); }
+.tip-tier-scale { display: block; margin-top: 3px; }
 .tip-foot { padding: 8px 12px 12px; border-top: 1px solid var(--line); }
 .tip-foot h4 { margin: 4px 0 6px; font: 700 .78rem/1 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .tip-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px; }

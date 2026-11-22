@@ -12,6 +12,8 @@
   let dataPromise = null;
   const DL = {
     data: null, items: new Map(), heroes: new Map(), abilities: new Map(), esc, num, SLOT_NAMES,
+    // The spirit power tooltips show scaled values at; the build editor keeps it at its build's.
+    spirit: 0,
     load() {
       dataPromise ||= fetch("/gamedata.json").then((r) => {
         if (!r.ok) throw new Error(`game data: HTTP ${r.status}`);
@@ -35,9 +37,28 @@
       <span class="tile-name">${esc(it.name)}</span>${opts.cost === false ? "" : `<span class="tile-cost souls">${num(it.cost)}</span>`}
     </button>`;
 
+  // Scaling, as the game's `×0.61` next to a value: what each point of a stat adds to it.
+  const SCALE_STATS = { spirit: "spirit power", boon: "boon", melee: "melee damage", weapon: "weapon damage" };
+  /** The number of a property; at the build's spirit power where a page set one (DL.spirit). */
+  function shown(p) {
+    const sc = p.scale;
+    if (!sc || sc.stat !== "spirit" || !DL.spirit) return p.value;
+    const v = sc.base + sc.per * DL.spirit;
+    const text = String(Math.round(v * (Math.abs(v) < 10 ? 100 : 10)) / (Math.abs(v) < 10 ? 100 : 10));
+    return `${sc.signed && v > 0 ? "+" : ""}${text}${sc.postfix}`;
+  }
+  const badge = (sc, text = `×${sc.text}`) => `<i class="scale s-${esc(sc.stat)}" title="${esc(text)} per ${esc(SCALE_STATS[sc.stat] || sc.stat)}">${esc(text)}</i>`;
   const line = (p, big) => big
-    ? `<div class="tip-big">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${esc(p.value)}</b><span>${esc(p.label)}</span></div>`
-    : `<div class="tip-line${p.conditional ? " cond" : ""}">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${esc(p.value)}</b> ${esc(p.label)}${p.conditional ? " <small>(conditional)</small>" : ""}</div>`;
+    ? `<div class="tip-big">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${esc(shown(p))}${p.scale ? badge(p.scale) : ""}</b><span>${esc(p.label)}</span></div>`
+    : `<div class="tip-line${p.conditional ? " cond" : ""}">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${esc(shown(p))}</b>${p.scale ? badge(p.scale) : ""} ${esc(p.label)}${p.conditional ? " <small>(conditional)</small>" : ""}</div>`;
+  /** What the badges in a tooltip mean, and the spirit power its numbers are at. */
+  function scaleNote(list, upgrades = []) {
+    const stats = new Set(upgrades.flatMap((u) => (u.scales || []).map((x) => x.stat)));
+    for (const s of list) for (const p of [...s.big, ...s.lines]) if (p.scale) stats.add(p.scale.stat);
+    if (!stats.size) return "";
+    const keys = Object.keys(SCALE_STATS).filter((k) => stats.has(k));
+    return `<p class="tip-scale-note">${keys.map((k) => `<i class="scale s-${k}">×</i> per ${SCALE_STATS[k]}`).join(" · ")}${stats.has("spirit") ? (DL.spirit ? `<br>Values at this build's <b>${num(DL.spirit)}</b> spirit power.` : "<br>Values at 0 spirit power.") : ""}</p>`;
+  }
 
   function sections(list) {
     return list.map((s) => {
@@ -56,7 +77,7 @@
     const foot = (title, list) => list.length ? `<h4>${title}</h4><div class="tile-row">${list.map((x) => DL.tile(x, { small: true })).join("")}</div>` : "";
     return `<div class="tip slot-${esc(it.slot)}">
       <div class="tip-head"><img src="${esc(it.image)}" alt=""><div class="tip-title"><h3>${esc(it.name)}</h3><span class="tip-sub">${esc(SLOT_NAMES[it.slot] || it.slot)} · Tier ${Number(it.tier)}${it.active ? " · Active" : ""}</span></div><span class="souls">${num(it.cost)}</span></div>
-      ${sections(it.tooltip)}
+      ${sections(it.tooltip)}${scaleNote(it.tooltip)}
       ${from.length || into.length ? `<div class="tip-foot">${foot("Builds from", from)}${foot("Upgrades into", into)}</div>` : ""}
       ${extra}
     </div>`;
@@ -64,11 +85,11 @@
 
   DL.abilityTip = (a, extra = "") => {
     const head = a.header || {};
-    const tiers = (a.upgrades || []).slice(0, 3).map((u, i) => `<div class="tip-tier"><span class="ap">${[1, 2, 5][i]} AP</span>${u.text ? html(u.text) : esc(u.bonuses.join(", "))}</div>`).join("");
+    const tiers = (a.upgrades || []).slice(0, 3).map((u, i) => `<div class="tip-tier"><span class="ap">${[1, 2, 5][i]} AP</span>${u.text ? html(u.text) : esc(u.bonuses.join(", "))}${(u.scales || []).map((x) => `<span class="tip-tier-scale">${badge(x, x.text)} ${esc(x.label)}</span>`).join("")}</div>`).join("");
     return `<div class="tip">
       <div class="tip-head"><img src="${esc(a.image)}" alt="" style="background:#222;border-radius:8px;padding:4px"><div class="tip-title"><h3>${esc(a.name)}</h3><span class="tip-sub">${a.ultimate ? "Ultimate" : "Ability"}${a.quip ? " · " + html(a.quip) : ""}</span></div>
         <span class="cd" style="text-align:right;font-size:.85rem">${head.cooldown ? `⟳ ${esc(head.cooldown)}` : ""}${head.charges ? `<br>${esc(head.charges)} charges` : ""}</span></div>
-      ${sections(a.tooltip)}
+      ${sections(a.tooltip)}${scaleNote(a.tooltip, a.upgrades || [])}
       ${tiers ? `<div class="tip-tiers">${tiers}</div>` : ""}
       ${extra}
     </div>`;
