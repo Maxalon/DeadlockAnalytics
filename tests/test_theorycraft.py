@@ -418,14 +418,19 @@ def test_scaling_and_distances():
     props = {p["key"]: p for s in dagger["tooltip"] for p in s["big"] + s["lines"]}
     # The game's "×2.2" next to the damage: what each point of spirit power adds.
     assert props["Damage"]["value"] == "65"
-    assert props["Damage"]["scale"] == {
-        "stat": "spirit",
-        "per": 2.2,
-        "text": "2.2",
-        "base": 65.0,
-        "signed": False,
-        "postfix": "",
+    assert props["Damage"]["scale"] == {"stat": "spirit", "per": 2.2, "text": "2.2"}
+    assert props["Damage"]["calc"] == {"base": 65.0, "signed": False, "postfix": "", "mods": {}}
+    # A build's ability duration bonus applies to durations, whatever else they scale with.
+    assert props["SleepDuration"]["calc"]["mods"] == {"duration": 1.0} and "scale" not in props["SleepDuration"]
+    assert props["SleepWakeUpDelay"]["scale"]["stat"] == "spirit"
+    assert props["SleepWakeUpDelay"]["calc"]["mods"] == {"duration": 1.0}
+    fn = lambda **sf: gamedata.build_mods({"scale_function": sf})  # noqa: E731
+    assert fn(class_name="scale_function_tech_range") == {"range": 1.0}
+    assert fn(class_name="scale_function_single_stat", specific_stat_scale_type="ETechRadius") == {"radius": 1.0}
+    assert fn(class_name="scale_function_single_stat", specific_stat_scale_type="ETechDuration", stat_scale=1.1) == {
+        "duration": 1.1
     }
+    assert fn(class_name="scale_function_single_stat", specific_stat_scale_type="ETechCooldown") == {}
     # Which bonuses apply to a value (duration, range, cooldown) isn't scaling, nor is a zero factor.
     assert (
         gamedata.scaling({"scale_function": {"class_name": "scale_function_tech_duration", "stat_scale": 1.0}}) is None
@@ -462,7 +467,7 @@ def test_scaling_and_distances():
             "scale_function": {"class_name": "scale_function_healing_spirit_scale", "stat_scale": 0.6},
         },
     }
-    assert gamedata.prop(props, "Range")["value"] == "14m"
+    assert gamedata.prop(props, "Range")["value"] == "14m" and "calc" not in gamedata.prop(props, "Range")
     assert gamedata.prop(props, "Radius") is None
     assert gamedata.prop(props, "Heal")["value"] == "0" and gamedata.prop(props, "Heal")["scale"]["text"] == "0.6"
 

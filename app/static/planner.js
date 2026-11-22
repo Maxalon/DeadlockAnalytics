@@ -300,13 +300,18 @@
       }).join("")}</div>${h ? "" : '<p class="muted small">Pick a hero to see investment bonuses.</p>'}`;
 
     const sum = (stat, postfix) => [...totals.values()].filter((t) => t.stat === stat && (postfix === undefined || t.postfix === postfix)).reduce((a, t) => a + t.value, 0);
-    // Tooltips opened from here show spirit-scaled numbers at this build's spirit power.
-    DL.spirit = Math.round(sum("MODIFIER_VALUE_TECH_POWER") + reached.spirit);
+    // Tooltips opened from here show their numbers with this build's stats applied.
+    DL.build = {
+      spirit: Math.round(sum("MODIFIER_VALUE_TECH_POWER") + reached.spirit),
+      duration: sum("MODIFIER_VALUE_BONUS_ABILITY_DURATION_PERCENTAGE", "%"),
+      range: sum("MODIFIER_VALUE_TECH_RANGE_PERCENT", "%"),
+      radius: sum("MODIFIER_VALUE_TECH_RADIUS_PERCENT", "%"),
+    };
     const rows = [];
     if (h) {
       const base = h.panel.base_health || 0;
       rows.push(["Health", num(Math.round(base * (1 + reached.vitality / 100) + sum("MODIFIER_VALUE_HEALTH_MAX")))]);
-      rows.push(["Spirit power", num(DL.spirit)]);
+      rows.push(["Spirit power", num(DL.build.spirit)]);
       rows.push(["Weapon damage", `+${num(Math.round(sum("MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE", "%") + reached.weapon))}%`]);
     }
     // Already summed into the hero rows above.

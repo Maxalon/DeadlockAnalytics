@@ -51,6 +51,13 @@ _SCALE_FUNCTIONS = {
     "scale_function_multi_stats",
     "scale_function_ability_weapon_damage",
 }
+# The stat types a build's percentage bonuses apply to, and the classes that imply one.
+_BUILD_MODS = {"ETechDuration": "duration", "ETechRange": "range", "ETechRadius": "radius"}
+_MOD_CLASSES = {
+    "scale_function_tech_duration": "duration",
+    "scale_function_tech_range": "range",
+    "scale_function_tech_range_rounded": "range",
+}
 _IMG = re.compile(
     r"""<img\b[^>]*?\bsrc\s*=\s*["'](https://assets-bucket\.deadlock-api\.com/[\w./-]+)["'][^>]*>""", re.I
 )
@@ -127,6 +134,22 @@ def _coef(per: float) -> str:
     return f"{per:.2f}".rstrip("0").rstrip(".") if abs(per) >= 0.1 else f"{per:.2g}"
 
 
+def build_mods(p: dict) -> dict:
+    """Which of a build's percentage bonuses (ability duration, range, radius) a property grows
+    with, and how strongly (1 = the full bonus)."""
+    sf = p.get("scale_function") or {}
+    kind = sf.get("specific_stat_scale_type")
+    mods = {_BUILD_MODS[t]: 1.0 for t in [kind, *(sf.get("scaling_stats") or [])] if t in _BUILD_MODS}
+    implied = _MOD_CLASSES.get(sf.get("class_name"))
+    if implied and not kind:
+        mods.setdefault(implied, 1.0)
+    # A factor on a function of only that bonus is its strength.
+    own = _BUILD_MODS.get(kind) or (implied if not kind else None)
+    if own and _num(sf.get("stat_scale")):
+        mods[own] = _num(sf.get("stat_scale"))
+    return mods
+
+
 def item_stats(props: dict) -> list[dict]:
     """The item's tooltip numbers: labelled, non-zero properties."""
     out = []
@@ -185,9 +208,12 @@ def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
         "css": p.get("css_class") or "",
         "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
     }
+    mods = build_mods(p)
     if scale:
-        # The number itself too, so the editor can show the value at a build's spirit power.
-        out["scale"] = {**scale, "base": v, "signed": signed, "postfix": postfix}
+        out["scale"] = scale
+    if scale or mods:
+        # The number itself, so the editor can show the value with a build's stats applied.
+        out["calc"] = {"base": v, "signed": signed, "postfix": postfix, "mods": mods}
     return out
 
 
@@ -200,6 +226,8 @@ def _header(props: dict) -> dict:
         p = prop(props, key)
         if p:
             out[name] = p["value"]
+            if name == "duration" and p.get("calc"):
+                out["duration_calc"] = p["calc"]
     return out
 
 

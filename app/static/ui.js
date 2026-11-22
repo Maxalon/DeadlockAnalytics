@@ -12,8 +12,9 @@
   let dataPromise = null;
   const DL = {
     data: null, items: new Map(), heroes: new Map(), abilities: new Map(), esc, num, SLOT_NAMES,
-    // The spirit power tooltips show scaled values at; the build editor keeps it at its build's.
-    spirit: 0,
+    // The build whose stats tooltips apply to their numbers: { spirit, duration, range, radius },
+    // the last three in percent. Set by the build editor; null shows base values.
+    build: null,
     load() {
       dataPromise ||= fetch("/gamedata.json").then((r) => {
         if (!r.ok) throw new Error(`game data: HTTP ${r.status}`);
@@ -39,25 +40,42 @@
 
   // Scaling, as the game's `×0.61` next to a value: what each point of a stat adds to it.
   const SCALE_STATS = { spirit: "spirit power", boon: "boon", melee: "melee damage", weapon: "weapon damage" };
-  /** The number of a property; at the build's spirit power where a page set one (DL.spirit). */
+  const BUILD_MODS = { duration: "ability duration", range: "ability range", radius: "radius" };
+  /** A property's number with the build's stats applied (DL.build, set by the build editor):
+   *  spirit scaling first, then the percentage bonuses to durations, ranges and radii. */
+  function calc(p) {
+    const c = p.calc;
+    const b = DL.build;
+    if (!c || !b) return null;
+    let v = c.base + (p.scale?.stat === "spirit" ? p.scale.per * b.spirit : 0);
+    for (const [k, strength] of Object.entries(c.mods)) v *= 1 + (strength * (b[k] || 0)) / 100;
+    return v === c.base ? null : v;
+  }
   function shown(p) {
-    const sc = p.scale;
-    if (!sc || sc.stat !== "spirit" || !DL.spirit) return p.value;
-    const v = sc.base + sc.per * DL.spirit;
-    const text = String(Math.round(v * (Math.abs(v) < 10 ? 100 : 10)) / (Math.abs(v) < 10 ? 100 : 10));
-    return `${sc.signed && v > 0 ? "+" : ""}${text}${sc.postfix}`;
+    const v = calc(p);
+    if (v === null) return esc(p.value);
+    const c = p.calc;
+    const unit = Math.abs(v) < 10 ? 100 : 10;
+    return `<span class="calc" title="${esc(p.value)} without this build">${c.signed && v > 0 ? "+" : ""}${Math.round(v * unit) / unit}${esc(c.postfix)}</span>`;
   }
   const badge = (sc, text = `×${sc.text}`) => `<i class="scale s-${esc(sc.stat)}" title="${esc(text)} per ${esc(SCALE_STATS[sc.stat] || sc.stat)}">${esc(text)}</i>`;
   const line = (p, big) => big
-    ? `<div class="tip-big">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${esc(shown(p))}${p.scale ? badge(p.scale) : ""}</b><span>${esc(p.label)}</span></div>`
-    : `<div class="tip-line${p.conditional ? " cond" : ""}">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${esc(shown(p))}</b>${p.scale ? badge(p.scale) : ""} ${esc(p.label)}${p.conditional ? " <small>(conditional)</small>" : ""}</div>`;
-  /** What the badges in a tooltip mean, and the spirit power its numbers are at. */
+    ? `<div class="tip-big">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${shown(p)}${p.scale ? badge(p.scale) : ""}</b><span>${esc(p.label)}</span></div>`
+    : `<div class="tip-line${p.conditional ? " cond" : ""}">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${shown(p)}</b>${p.scale ? badge(p.scale) : ""} ${esc(p.label)}${p.conditional ? " <small>(conditional)</small>" : ""}</div>`;
+  /** Under a tooltip: what its badges mean, and which of the build's stats its numbers include. */
   function scaleNote(list, upgrades = []) {
+    const props = list.flatMap((s) => [...s.big, ...s.lines, ...(s.duration_calc ? [{ calc: s.duration_calc }] : [])]);
     const stats = new Set(upgrades.flatMap((u) => (u.scales || []).map((x) => x.stat)));
-    for (const s of list) for (const p of [...s.big, ...s.lines]) if (p.scale) stats.add(p.scale.stat);
-    if (!stats.size) return "";
-    const keys = Object.keys(SCALE_STATS).filter((k) => stats.has(k));
-    return `<p class="tip-scale-note">${keys.map((k) => `<i class="scale s-${k}">×</i> per ${SCALE_STATS[k]}`).join(" · ")}${stats.has("spirit") ? (DL.spirit ? `<br>Values at this build's <b>${num(DL.spirit)}</b> spirit power.` : "<br>Values at 0 spirit power.") : ""}</p>`;
+    for (const p of props) if (p.scale) stats.add(p.scale.stat);
+    const legend = Object.keys(SCALE_STATS).filter((k) => stats.has(k)).map((k) => `<i class="scale s-${k}">×</i> per ${SCALE_STATS[k]}`).join(" · ");
+    const b = DL.build;
+    const used = [];
+    if (stats.has("spirit")) used.push(`<b>${num(b ? b.spirit : 0)}</b> spirit power`);
+    for (const [k, label] of Object.entries(BUILD_MODS)) {
+      if (b?.[k] && props.some((p) => p.calc?.mods[k])) used.push(`<b>+${num(b[k])}%</b> ${label}`);
+    }
+    const at = used.length ? `Values at ${b ? "this build's " : ""}${used.join(", ")}.` : "";
+    return legend || at ? `<p class="tip-scale-note">${legend}${legend && at ? "<br>" : ""}${at}</p>` : "";
   }
 
   function sections(list) {
@@ -66,7 +84,7 @@
         const rows = [...s.big, ...s.lines].map((p) => line(p, false)).join("");
         return rows || s.text ? `<div class="tip-innate">${s.text ? `<p class="tip-text">${html(s.text)}</p>` : ""}${rows}</div>` : "";
       }
-      const head = s.type === "ability" ? "" : `<div class="tip-sec-head"><span>${s.type === "active" ? "Active" : "Passive"}</span><span class="cd">${s.cooldown ? `⟳ ${esc(s.cooldown)}` : ""}${s.duration ? ` ⧗ ${esc(s.duration)}` : ""}</span></div>`;
+      const head = s.type === "ability" ? "" : `<div class="tip-sec-head"><span>${s.type === "active" ? "Active" : "Passive"}</span><span class="cd">${s.cooldown ? `⟳ ${esc(s.cooldown)}` : ""}${s.duration ? ` ⧗ ${shown({ value: s.duration, calc: s.duration_calc })}` : ""}</span></div>`;
       return `<div class="tip-sec ${esc(s.type)}">${head}${s.text ? `<p class="tip-text">${html(s.text)}</p>` : ""}${s.big.length ? `<div class="tip-bigs">${s.big.map((p) => line(p, true)).join("")}</div>` : ""}${s.lines.length ? `<div class="tip-lines">${s.lines.map((p) => line(p, false)).join("")}</div>` : ""}</div>`;
     }).join("");
   }

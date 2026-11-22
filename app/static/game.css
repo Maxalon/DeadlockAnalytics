@@ -98,6 +98,7 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .scale.s-weapon, .scale.s-melee { --sc: var(--weapon); }
 .scale.s-boon { --sc: var(--gold); }
 .tip-big b .scale { margin-left: 4px; vertical-align: 2px; }
+.calc { text-decoration: underline dotted; text-decoration-color: var(--muted); text-underline-offset: 3px; }
 .tip-scale-note { margin: 0; padding: 2px 12px 8px; font-size: .75rem; color: var(--muted); }
 .tip-tier-scale { display: block; margin-top: 3px; }
 .tip-foot { padding: 8px 12px 12px; border-top: 1px solid var(--line); }
