@@ -340,6 +340,9 @@ def shop_items(items_raw: list[dict]) -> list[dict]:
                 "tier": i.get("item_tier") or 0,
                 "cost": i.get("cost") or 0,
                 "active": bool(i.get("is_active_item")),
+                # Imbue items are bought onto one of the hero's abilities: "imbue_active",
+                # "imbue_modifier_value" or "imbue_active_non_ult" (not the ultimate), else "".
+                "imbue": i.get("imbue") or "",
                 "image": i.get("shop_image_webp") or i.get("shop_image") or i.get("image_webp") or i.get("image"),
                 "desc": d["desc"] or d["active"] or d["passive"],
                 "stats": item_stats(i.get("properties")),
@@ -537,6 +540,7 @@ def planner_json(data: dict, client_version: int | None) -> dict:
                 "tier": i["tier"],
                 "cost": i["cost"],
                 "active": i["active"],
+                "imbue": i["imbue"],
                 "image": i["image"],
                 "components": i["components"],
                 "upgrades_to": i["upgrades_to"],

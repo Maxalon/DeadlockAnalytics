@@ -34,8 +34,8 @@
   };
 
   /** An item as the shop shows it. opts: small, dim, note (annotation), attrs (extra attributes). */
-  DL.tile = (it, opts = {}) => `<button type="button" class="tile slot-${esc(it.slot)}${opts.small ? " small" : ""}${opts.dim ? " dim" : ""}" data-item="${Number(it.id)}" ${opts.attrs || ""} title="${esc(it.name)}">
-      <span class="tile-art"><span class="tile-tier">${Number(it.tier) === 5 ? "★" : "T" + Number(it.tier)}</span><img src="${esc(it.image)}" alt="" loading="lazy">${it.active ? '<span class="tile-active">Active</span>' : ""}${opts.note ? '<span class="tile-note"></span>' : ""}</span>
+  DL.tile = (it, opts = {}) => `<button type="button" class="tile slot-${esc(it.slot)}${opts.small ? " small" : ""}${opts.dim ? " dim" : ""}${it.active ? " active" : ""}" data-item="${Number(it.id)}" ${opts.attrs || ""} title="${esc(it.name)}">
+      <span class="tile-art"><span class="tile-tier">${Number(it.tier) === 5 ? "★" : "T" + Number(it.tier)}</span><img src="${esc(it.image)}" alt="" loading="lazy">${it.imbue ? '<span class="tile-imbue">Imbue</span>' : ""}${opts.note ? '<span class="tile-note"></span>' : ""}</span>
       <span class="tile-name">${esc(it.name)}</span>${opts.cost === false ? "" : `<span class="tile-cost souls">${num(it.cost)}</span>`}
     </button>`;
 

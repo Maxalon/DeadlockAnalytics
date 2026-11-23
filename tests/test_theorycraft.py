@@ -518,3 +518,41 @@ def test_numbers_as_the_game_prints_them():
     # Prose keeps the numbers Valve wrote, without the data's artifacts.
     text = gamedata.clean_html('<span class="highlight">+13.3333</span> DPS, -10.0% for 6.0s, 0.25s, 49.5')
     assert text == '<span class="highlight">+13.3</span> DPS, -10% for 6s, 0.25s, 49.5'
+
+
+def test_imbue_targets_and_item_tiles(tmp_path):
+    """The game's "Imbue Target": the hero ability a build suggests for an imbue item."""
+    from app import builds
+
+    game = copy.deepcopy(GAME)
+    next(i for i in game["items"] if i["id"] == TOXIC)["imbue"] = "imbue_active_non_ult"
+    abilities = gamedata.normalise(game["items"], game["heroes"])["heroes"][0]["abilities"]
+    dagger = next(a["id"] for a in abilities if not a["ultimate"])
+    ultimate = next(a["id"] for a in abilities if a["ultimate"])
+    found = copy.deepcopy(BUILDS)
+    hb = found[0]["hero_build"]
+    mods = [m for cat in hb["details"]["mod_categories"] for m in cat["mods"]]
+    next(m for m in mods if m["ability_id"] == TOXIC)["imbue_target_ability_id"] = dagger
+    c, _ = make_client(tmp_path, api=GameApi(game=game, builds=found))
+
+    # A published build shows the suggestion under the item, as the game's tooltip names it.
+    page = c.get(f"/builds/{HAZE}/{hb['hero_build_id']}").text
+    assert "Imbue Suggestion: Sleep Dagger" in page
+    # As on the game's shop card: imbue items say so, actives are round and carry no tag.
+    assert '<span class="tile-imbue">Imbue</span>' in page and "tile-active" not in page
+    data = c.get("/gamedata.json").json()
+    assert next(i for i in data["items"] if i["id"] == TOXIC)["imbue"] == "imbue_active_non_ult"
+    assert next(i for i in data["items"] if i["id"] == EXTRA_HEALTH)["imbue"] == ""
+
+    # Saved from the editor: kept on an imbue item for an ability it can take, dropped otherwise.
+    def saved(target, item=TOXIC):
+        mod = {"ability_id": item, "imbue_target_ability_id": target}
+        r = c.post("/api/builds", json={"hero_id": HAZE, "name": "x", "details": details([mod])})
+        return editor_state(c.get(r.json()["url"]).text)["details"]["mod_categories"][0]["mods"][0]
+
+    assert saved(dagger) == {"ability_id": TOXIC, "imbue_target_ability_id": dagger}
+    assert saved(ultimate) == {"ability_id": TOXIC}  # this item can't imbue an ultimate
+    assert saved(12345) == {"ability_id": TOXIC}  # not one of the hero's abilities
+    assert saved(dagger, EXTRA_HEALTH) == {"ability_id": EXTRA_HEALTH}  # not an imbue item
+    cats = builds.categories({"mod_categories": [{"mods": [{"ability_id": TOXIC, "imbue_target_ability_id": dagger}]}]})
+    assert cats[0]["mods"][0]["imbue"] == dagger

@@ -74,8 +74,10 @@ screen"; the last game data stays available offline). Styled after the game's ow
   mirror of Valve's build browser). A build shows its categories, annotations and ability order.
   `/players/<id>/builds` lists a tracked player's own in-game builds.
 - `/planner`: a build editor like the game's: named categories with descriptions and an
-  optional flag, items with annotations and sell priority, the ability point order, souls per
-  category with investment bonuses, and summed stats. Any in-game build opens in it unchanged.
+  optional flag, items with annotations, sell priority and, for imbue items, the game's
+  "Imbue Target" (the ability the shop suggests and Quickbuy picks), the ability point order,
+  souls per category with investment bonuses, and summed stats. Any in-game build opens in it
+  unchanged.
   Builds are saved per player ("Who are you?" in the menu). On phones it has Build / Shop /
   Abilities / Stats tabs.
 - "Publish to game" (needs the fetcher): the Steam bot publishes the build to the game's build

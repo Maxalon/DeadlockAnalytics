@@ -22,7 +22,9 @@
   {% if c.description %}<p class="cat-desc">{{ c.description }}</p>{% endif %}
   <div class="tile-row">
     {% for m in c.mods %}{% set i = by_id.get(m.id) %}
-    {% if i %}<div>{{ tile(i, m.note) }}{% if m.note %}<div class="cat-note">{{ m.note }}</div>{% endif %}</div>{% endif %}
+    {% if i %}{% set target = abilities.get(m.imbue) if i.imbue else None %}<div>{{ tile(i, m.note) }}
+      {%- if target %}<div class="cat-imbue" data-ability="{{ hero.id }}:{{ target.id }}" title="Imbue Suggestion: {{ target.name }}"><img src="{{ target.image }}" alt="Imbue Suggestion:"><span>{{ target.name }}</span></div>{% endif %}
+      {%- if m.note %}<div class="cat-note">{{ m.note }}</div>{% endif %}</div>{% endif %}
     {% endfor %}
   </div>
 </section>

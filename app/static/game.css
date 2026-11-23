@@ -33,7 +33,8 @@ select, textarea { font: inherit; padding: 8px 10px; border-radius: 6px; border:
 textarea { width: 100%; resize: vertical; }
 input[type=search], input[type=text] { background: var(--panel); border-color: var(--line); }
 
-/* ---- Item tile: the shop's square icon on its category colour ---- */
+/* ---- Item tile: the shop's icon on its category colour. As on the game's shop card, an
+   active item is round and carries no tag; an imbue item says IMBUE. ---- */
 .tile { position: relative; display: inline-flex; flex-direction: column; align-items: center; width: 74px; padding: 0; border: 0; background: none; color: var(--text); cursor: pointer; font: inherit; text-align: center; }
 .tile .tile-art { position: relative; width: 74px; height: 74px; border-radius: 6px; border: 1px solid var(--c-mid);
   background: radial-gradient(circle at 50% 35%, var(--c-mid), var(--c-dark) 75%); display: grid; place-items: center; overflow: hidden; }
@@ -41,7 +42,11 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tile .tile-name { margin-top: 4px; font-size: .72rem; line-height: 1.15; max-width: 74px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .tile .tile-cost { font-size: .72rem; }
 .tile .tile-tier { display: none; }
-.tile .tile-active { position: absolute; bottom: 0; left: 0; right: 0; font: 700 .58rem/1.5 "Barlow Condensed", sans-serif; letter-spacing: .08em; text-transform: uppercase; background: rgb(0 0 0 / .55); color: var(--c); }
+.tile.active .tile-art, .tile.active .tile-art img { border-radius: 50%; }
+.tile .tile-imbue { position: absolute; bottom: 2px; left: 0; right: 0; font-size: .62rem; font-style: italic; font-weight: 700; line-height: 1.2; letter-spacing: 1px; text-transform: uppercase;
+  color: #e7c8ff; text-shadow: 0 0 3px #10130d, 0 0 3px #10130d, 0 0 5px #10130d; }
+.tile.active .tile-imbue { bottom: 7px; }
+.tile.small .tile-imbue { font-size: .54rem; letter-spacing: .5px; }
 .tile .tile-note { position: absolute; top: 3px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
 .tile:hover .tile-art, .tile:focus-visible .tile-art { border-color: var(--c); box-shadow: 0 0 0 1px var(--c), 0 0 14px -2px var(--c); }
 .tile.dim { opacity: .38; }
@@ -219,6 +224,18 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .cat-desc { margin: 0; padding: 6px 12px 0; color: var(--muted); font-size: .85rem; white-space: pre-line; }
 .cat .tile-row { padding: 10px 12px 12px; }
 .cat-note { font-size: .7rem; color: var(--gold); max-width: 74px; }
+/* The build's imbue target for an item: the ability's icon and name under the tile. */
+.cat-imbue { display: flex; align-items: center; gap: 4px; max-width: 74px; margin-top: 2px; font-size: .68rem; line-height: 1.15; color: var(--spirit); text-align: left; }
+.cat-imbue img { width: 18px; height: 18px; flex: none; border-radius: 4px; background: #222; padding: 2px; }
+.cat-imbue span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cat-imbue[data-ability] { cursor: pointer; }
+.imbue-pick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.imbue-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 76px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text);
+  font: inherit; font-size: .7rem; line-height: 1.15; text-align: center; cursor: pointer; }
+.imbue-opt img { width: 40px; height: 40px; border-radius: 8px; background: #222; padding: 4px; }
+.imbue-opt.on { border-color: var(--spirit); box-shadow: 0 0 0 1px var(--spirit); background: var(--spirit-dark); }
+.imbue-opt:disabled { opacity: .35; cursor: default; }
+.imbue-help { margin: 4px 0 0; }
 .ab-order { display: flex; flex-wrap: wrap; gap: 6px; }
 .ab-step { position: relative; display: flex; flex-direction: column; align-items: center; width: 52px; padding: 4px 2px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); font-size: .68rem; color: var(--muted); }
 .ab-step img { width: 34px; height: 34px; border-radius: 6px; background: #222; padding: 3px; }
@@ -310,7 +327,8 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
   .tip-hint { display: block; }
   .tip-lines { gap: 0; }
   .tip-lines .tip-line { min-height: 40px; }
-  .tip-big { min-height: 64px; }
+  .tip-big { min-height: 64px; padding-top: 14px; }  /* narrow boxes: the value clears x0.61 */
+  .cat-imbue[data-ability] { min-height: 40px; }
   .sc span { font-size: .7rem; }
   .tip-sec.ability .tip-big .sc span { font-size: .74rem; }
   .formula { width: min(290px, calc(100vw - 24px)); font-size: .92rem; }

@@ -3,12 +3,16 @@ the build editor and publishing through the bot.
 
     details = {
       "mod_categories": [{"name", "description", "optional", "width", "height",
-                          "mods": [{"ability_id", "annotation", "sell_priority", ...}]}],
+                          "mods": [{"ability_id", "annotation", "sell_priority",
+                                    "imbue_target_ability_id", ...}]}],
       "ability_order": {"currency_changes": [{"ability_id", "currency_type", "delta"}]},
     }
 
 In the ability order, currency_type 2 is an ability unlock and 1 is ability points: delta -1,
 -2, -5 buy an ability's first, second and third upgrade.
+
+`imbue_target_ability_id` is the game's "Imbue Target" for an imbue item: the hero ability the
+shop suggests imbuing, and the one Quickbuy picks by itself.
 """
 
 UNLOCK, POINTS = 2, 1
@@ -34,7 +38,12 @@ def categories(details: dict) -> list[dict]:
             "description": c.get("description") or "",
             "optional": bool(c.get("optional")),
             "mods": [
-                {"id": m.get("ability_id"), "note": m.get("annotation") or "", "sell_priority": m.get("sell_priority")}
+                {
+                    "id": m.get("ability_id"),
+                    "note": m.get("annotation") or "",
+                    "sell_priority": m.get("sell_priority"),
+                    "imbue": m.get("imbue_target_ability_id"),
+                }
                 for m in c.get("mods") or []
             ],
         }
@@ -87,9 +96,19 @@ def _int(value, lo: int, hi: int) -> int | None:
     return v if lo <= v <= hi else None
 
 
-def clean_details(details: dict, item_ids: set[int], ability_ids: set[int]) -> dict:
+def imbue_targets(items: list[dict], abilities: list[dict]) -> dict[int, set[int]]:
+    """For each imbue item, the hero abilities it may be suggested for."""
+    every = {a["id"] for a in abilities}
+    not_ultimate = {a["id"] for a in abilities if not a.get("ultimate")}
+    return {i["id"]: not_ultimate if i["imbue"] == "imbue_active_non_ult" else every for i in items if i.get("imbue")}
+
+
+def clean_details(
+    details: dict, item_ids: set[int], ability_ids: set[int], imbue: dict[int, set[int]] | None = None
+) -> dict:
     """A build's details from the editor, reduced to what the game accepts: known items only,
-    length limits, a valid ability order."""
+    length limits, a valid ability order, imbue targets only on imbue items (`imbue`: the
+    abilities each may take)."""
     cats = []
     for c in (details.get("mod_categories") or [])[:MAX_CATEGORIES]:
         mods = []
@@ -104,6 +123,9 @@ def clean_details(details: dict, item_ids: set[int], ability_ids: set[int]) -> d
             prio = _int(m.get("sell_priority"), 1, 100)
             if prio:
                 mod["sell_priority"] = prio
+            target = _int(m.get("imbue_target_ability_id"), 1, 2**32 - 1)
+            if target in (imbue or {}).get(aid, ()):
+                mod["imbue_target_ability_id"] = target
             mods.append(mod)
         cats.append(
             {
