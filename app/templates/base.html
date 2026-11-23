@@ -42,7 +42,7 @@
     }
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   </script>
-  {% if game_ui %}<script src="{{ asset('ui.js') }}"></script>{% endif %}
+  {% if game_ui %}<script src="{{ asset('sheet.js') }}"></script><script src="{{ asset('ui.js') }}"></script>{% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

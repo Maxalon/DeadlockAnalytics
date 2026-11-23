@@ -133,4 +133,11 @@ ruff check app tests && ruff format --check app tests
 DATABASE_PATH=./dev.sqlite3 uvicorn app.main:create_app --factory --reload
 ```
 
+The pages are also tested in a real browser, on a phone-sized touch screen and with a mouse
+(`tests/browser`, Node 22 and Playwright; it starts the site itself with the fixtures' game data):
+
+```sh
+cd tests/browser && npm ci && npx playwright install chromium && npm test
+```
+
 Settings are documented in `.env.example`.

@@ -194,9 +194,9 @@ def test_editor_offers_the_export(tmp_path):
     c, _ = make_client(tmp_path)
     page = c.get("/planner").text
     assert 'id="ed-export"' in page
-    # Loaded after the editor itself, whose state it reads.
+    # Loaded after the editor itself, whose state it reads; the sheet before the UI that opens it.
     scripts = re.findall(r'<script src="(/static/(\w+)\.js\?v=\w+)">', page)
-    assert [name for _, name in scripts] == ["ui", "planner", "export"]
+    assert [name for _, name in scripts] == ["sheet", "ui", "planner", "export"]
     js = c.get(scripts[-1][0])
     assert js.status_code == 200 and "DL.editor" in js.text
 

@@ -168,8 +168,9 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tip-actions { display: flex; gap: 8px; padding: 0 12px 12px; flex-wrap: wrap; }
 .tip-pop { position: fixed; z-index: 50; pointer-events: none; }
 .tip-pop .tip { pointer-events: auto; }
-/* The sheet: a modal dialog over the whole screen whose scroller has two snap stops, the gap
-   above the sheet ("closed") and the sheet ("open"), so a swipe is native scrolling. */
+/* ---- The sheet (sheet.js) ---- */
+/* A modal dialog over the whole screen whose scroller has two snap stops, the gap above the
+   sheet ("closed") and the sheet ("open"), so a swipe is native scrolling. */
 .sheet-dialog { position: fixed; inset: 0; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
   background: none; color: var(--text); overflow: visible; overscroll-behavior: contain; }
 .sheet-dialog::backdrop { background: none; overflow: hidden; overscroll-behavior: contain; }  /* a scroll container, so the page behind stays put */
@@ -192,6 +193,7 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 @media (prefers-reduced-motion: no-preference) {
   .sheet-scroller { scroll-behavior: smooth; }  /* opening and closing slide; a swipe has its own motion */
 }
+.sheet-dialog.closing .sheet-scroller { pointer-events: none; }  /* sliding out: a finger can't stop it */
 /* The dimming follows the sheet's position. */
 @supports (animation-timeline: scroll()) and (timeline-scope: --sheet) {
   .sheet-dialog { timeline-scope: --sheet; }

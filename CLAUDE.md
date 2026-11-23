@@ -19,6 +19,24 @@ installed app on Android). Every feature has to be comfortable to use by touch:
 - Before calling UI work done, check it in a phone-sized touch viewport (Playwright with
   `hasTouch` and `isMobile`, 360px and 390px wide) as well as on desktop, in both themes.
 
+## Reliable, modular, maintainable, reusable
+
+The owner asks for these four in every change (said on 2026-11-23, about the bottom sheet). What
+that has meant in practice so far:
+
+- UI that more than one page could use is a file of its own with a small interface described at
+  its top, and knows nothing about its callers: `app/static/sheet.js` (`Sheet.open`,
+  `Sheet.close`). Use what exists (`Sheet`, `DL.onHold`, `DL.tile`, `DL.shop`) before writing
+  another, and extend it there rather than around it.
+- Nothing is left half done on screen: an action ends in a known state even when it is
+  interrupted, called twice or its callback throws.
+- Behaviour is pinned by tests that run in CI: `pytest` for the server, `tests/browser`
+  (Playwright with real touch input; `npm test` there) for the pages. A change to how a page
+  behaves comes with a browser test, and a safeguard with a test that fails without it.
+- For web platform patterns (dialogs, drawers, scrolling, gestures) read Chrome's Modern Web
+  Guidance first (`developer.chrome.com/docs/modern-web-guidance/guides`); the owner pointed to
+  it for the sheet, which follows its "Navigation Drawer" and "Dialog" guides.
+
 ## The game pages copy the game
 
 Items, heroes, tooltips and the build editor are meant to be a visual carbon copy of Deadlock's

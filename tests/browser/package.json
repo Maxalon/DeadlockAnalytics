@@ -1,0 +1,15 @@
+{
+  "name": "deadlock-browser-tests",
+  "private": true,
+  "description": "Browser tests for the site's pages: a phone-sized touch screen, and a mouse",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
