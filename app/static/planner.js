@@ -297,7 +297,6 @@
   });
 
   // ---- souls, investment, stats ----
-  let summary = null;
   function renderSummary() {
     const { all, gone } = owned();
     const spent = { weapon: 0, vitality: 0, spirit: 0 };
@@ -347,19 +346,17 @@
     const rows = [];
     if (h) {
       const base = h.panel.base_health || 0;
-      rows.push(["Health", Math.round(base * (1 + reached.vitality / 100) + sum("MODIFIER_VALUE_HEALTH_MAX")), "", false]);
-      rows.push(["Spirit power", DL.build.spirit, "", false]);
-      rows.push(["Weapon damage", Math.round(sum("MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE", "%") + reached.weapon), "%", true]);
+      rows.push(["Health", num(Math.round(base * (1 + reached.vitality / 100) + sum("MODIFIER_VALUE_HEALTH_MAX")))]);
+      rows.push(["Spirit power", num(DL.build.spirit)]);
+      rows.push(["Weapon damage", `+${num(Math.round(sum("MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE", "%") + reached.weapon))}%`]);
     }
     // Already summed into the hero rows above.
     const merged = (t) => h && (["MODIFIER_VALUE_HEALTH_MAX", "MODIFIER_VALUE_TECH_POWER"].includes(t.stat)
       || (t.stat === "MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE" && t.postfix === "%"));
     for (const t of [...totals.values()].filter((t) => !merged(t)).sort((a, b) => a.label.localeCompare(b.label))) {
-      rows.push([t.label, Math.round(t.value * 100) / 100, t.postfix, t.value > 0]);
+      rows.push([t.label, `${t.value > 0 ? "+" : ""}${num(Math.round(t.value * 100) / 100)}${t.postfix}`]);
     }
-    // Rows are [label, number, unit, with a plus sign]: the export prints the same rows.
-    $("ed-stats").innerHTML = rows.map(([k, v, unit, plus]) => `<div><span class="muted">${esc(k)}</span><b>${esc(`${plus ? "+" : ""}${num(v)}${unit}`)}</b></div>`).join("") || '<span class="muted">No items yet.</span>';
-    summary = { spent, reached, rows, counted: all.size - gone.size };
+    $("ed-stats").innerHTML = rows.map(([k, v]) => `<div><span class="muted">${esc(k)}</span><b>${esc(v)}</b></div>`).join("") || '<span class="muted">No items yet.</span>';
   }
 
   function renderAll() {
@@ -463,7 +460,7 @@
   $("ed-name").addEventListener("input", markDirty);
   $("ed-desc").addEventListener("input", markDirty);
   // What the export (export.js) reads: the build as it is now, saved or not.
-  DL.editor = { state, hero, owned, imbueTarget, summary: () => summary };
+  DL.editor = { state, hero, imbueTarget };
 
   DL.load().then(() => {
     // Items no longer in the game are dropped, and the ability order is checked again.

@@ -1,168 +1,57 @@
-// Build editor: the build as text, to paste or share into a chat with an AI. Everything the
-// editor shows is in it: categories, items with their tooltips, annotations, sell priorities and
-// imbue targets, the ability order, souls, investment bonuses and stats. Tooltip numbers are the
-// ones on screen (ui.js's calc: the build's spirit power and duration/range/radius bonuses
-// applied), each with its base value and how it was reached.
-// Numbers are written without thousands separators and with a decimal point, whatever the
-// phone's language, so a reader can't take 1.250 for one and a quarter.
+// Build editor: the build as text, to paste or share into a chat with an AI. It holds what is
+// set up in the editor and nothing the game data already says: the hero, name and description,
+// the categories (core or optional, with their descriptions), the items in them by name with
+// their imbue target, sell priority and note, and the ability order. No tooltips, stats or
+// ability descriptions.
 (() => {
   const DL = window.DL;
   const $ = (id) => document.getElementById(id);
-  const SLOTS = ["weapon", "vitality", "spirit"];
-  const TIER_COST = [1, 2, 5];
-  const parser = new DOMParser();
-
-  /** Tooltip markup as one line of plain text (parsed in an inert document: its icons are not
-   *  loaded). Line breaks become "; " where the line before doesn't end a sentence itself. */
-  const plain = (markup) => parser.parseFromString(String(markup || "").replace(/<br\s*\/?>|<\/p>/gi, "\n"), "text/html")
-    .body.textContent.split("\n").map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean)
-    .reduce((text, l) => (text ? `${text}${/[.!?:;,]$/.test(text) ? " " : "; "}${l}` : l), "");
+  const UNLOCK = 2;
   const oneLine = (s) => String(s || "").replace(/\s+/g, " ").trim();
-  const signed = (v, unit = "") => `${v > 0 ? "+" : ""}${DL.round(v, 2)}${unit}`;
-  const names = (ids) => ids.map((id) => DL.items.get(id)?.name).filter(Boolean).join(", ");
 
-  /** A tooltip value. Where the build changes it: `131.8 (base 22; Spirit x0.6 × 183 = +109.8)`. */
-  function value(p) {
-    if (!p.calc) return p.value;
-    const unit = p.calc.postfix;
-    const r = DL.calc(p);
-    const how = r.steps.map((st) => {
-      if (st.kind === "mod") return st.pct ? `${st.name} +${DL.round(st.pct, 2)}% = ${signed(st.add, unit)}` : `grows with ${st.name}`;
-      if (st.add === null) return `scales with ${st.name} x${st.times}, not applied`;
-      return st.add ? `${st.name} x${st.times} × ${DL.build.spirit} = ${signed(st.add, unit)}` : `scales with ${st.name} x${st.times}`;
-    }).join("; ");
-    return r.changed ? `${DL.fmt(r.value, p.calc)} (base ${p.value}; ${how})` : `${p.value} (${how})`;
-  }
-  const prop = (p) => `${p.label}: ${value(p)}${p.conditional ? " (conditional)" : ""}`;
-
-  /** One block of a tooltip as list lines. */
-  function section(s, indent) {
-    const props = [...s.big, ...s.lines].map(prop);
-    const text = s.text ? plain(s.text) : "";
-    if (s.type !== "active" && s.type !== "passive") return [...(text ? [text] : []), ...props].map((l) => `${indent}- ${l}`);
-    const head = [
-      s.cooldown && `cooldown ${s.cooldown}`,
-      s.duration && `duration ${value({ value: s.duration, calc: s.duration_calc })}`,
-      s.charges && `${s.charges} charges`,
-    ].filter(Boolean).join(", ");
-    return [
-      `${indent}- ${s.type === "active" ? "Active" : "Passive"}${head ? ` (${head})` : ""}${text ? `: ${text}` : ""}`,
-      ...props.map((l) => `${indent}  - ${l}`),
-    ];
-  }
-
-  function item(m, n, { all, gone }) {
+  function item(m, n) {
     const it = DL.items.get(m.id);
-    const kind = [it.active && "active", it.imbue && "imbue"].filter(Boolean).map((k) => `, ${k}`).join("");
-    const out = [`${n}. **${it.name}** (${DL.SLOT_NAMES[it.slot] || it.slot}, tier ${it.tier}, ${it.cost} souls${kind})`];
-    const sub = (line) => out.push(`   - ${line}`);
-    if (m.note) sub(`Annotation: ${oneLine(m.note)}`);
-    if (m.prio) sub(`Sell priority: ${m.prio}`);
-    if (it.imbue) sub(`Imbue target: ${DL.editor.imbueTarget(m)?.name || "none chosen"}`);
-    if (it.components.length) sub(`Builds from: ${names(it.components)}`);
-    if (it.upgrades_to.length) sub(`Upgrades into: ${names(it.upgrades_to)}`);
-    if (gone.has(it.id)) sub(`Replaced in this build by ${names(it.upgrades_to.filter((id) => all.has(id)))}: its souls and stats are not in the totals`);
-    for (const s of it.tooltip) out.push(...section(s, "   "));
+    const out = [`${n}. ${it.name}`];
+    if (it.imbue) out.push(`   - Imbue target: ${DL.editor.imbueTarget(m)?.name || "none"}`);
+    if (m.prio) out.push(`   - Sell priority: ${m.prio}`);
+    if (m.note) out.push(`   - Note: ${oneLine(m.note)}`);
     return out;
   }
 
-  function totals(h) {
-    const sum = DL.editor.summary();
-    const b = DL.build;
-    const sources = (list) => (list.length ? ` (${list.map(([name, v, unit]) => `${name} ${signed(v, unit || "")}`).join(", ")})` : "");
-    const out = ["## Totals", ""];
-    out.push(`- Souls: ${SLOTS.reduce((a, s) => a + sum.spent[s], 0)} for ${sum.counted} items (${SLOTS.map((s) => `${DL.SLOT_NAMES[s]} ${sum.spent[s]}`).join(", ")})`);
-    if (h) {
-      for (const slot of SLOTS) {
-        const [label, unit] = DL.data.investment[slot];
-        const next = (h.investment[slot] || []).find(([t]) => t > sum.spent[slot]);
-        out.push(`- ${DL.SLOT_NAMES[slot]} investment bonus: +${sum.reached[slot]}${unit} ${label.toLowerCase()}${next ? `; next step +${next[1]}${unit} at ${next[0]} souls` : "; highest step reached"}`);
-      }
-    }
-    out.push("", "Applied to the tooltip numbers below:", "");
-    out.push(`- Spirit power: ${b.spirit}${sources(b.sources.spirit)}`);
-    for (const [key, label] of [["duration", "Ability duration"], ["range", "Ability range"], ["radius", "Ability radius"]]) {
-      out.push(`- ${label}: ${signed(b[key], "%")}${sources(b.sources[key])}`);
-    }
-    if (sum.rows.length) {
-      out.push("", h ? "Stats (hero base, investment bonuses and always-on item stats; conditional and active effects are with each item):" : "Stats (always-on item stats):", "");
-      for (const [label, v, unit, plus] of sum.rows) out.push(`- ${label}: ${plus ? "+" : ""}${v}${unit}`);
-    }
-    return out;
-  }
-
+  /** What is skilled when. The abilities are named once, then referred to by their number. */
   function abilityOrder(h, order) {
-    const byId = new Map(h.abilities.map((a) => [a.id, a]));
-    const tiers = new Map();
+    const number = new Map(h.abilities.map((a, i) => [a.id, i + 1]));
     const out = ["## Ability order", ""];
-    if (!order.length) return [...out, "No steps set."];
+    if (!order.length) return [...out, "Not set."];
+    out.push(`Abilities: ${h.abilities.map((a, i) => `${i + 1} = ${a.name}`).join(", ")}.`);
+    out.push("Each step is an ability's number, then what is bought: its unlock, or its first, second or third upgrade (T1, T2, T3 for 1, 2 and 5 ability points).", "");
+    const tiers = new Map();
     order.forEach((s, i) => {
-      const name = byId.get(s.id)?.name || s.id;
-      if (s.type === 2) return out.push(`${i + 1}. Unlock ${name}`);
-      tiers.set(s.id, (tiers.get(s.id) || 0) + 1);
-      out.push(`${i + 1}. ${name} tier ${tiers.get(s.id)} (${-s.delta} AP)`);
-    });
-    const points = order.filter((s) => s.type === 1).reduce((a, s) => a - s.delta, 0);
-    out.push("", `${points} ability points spent.`);
-    return out;
-  }
-
-  function abilities(h, order) {
-    const out = [`## ${h.name}'s abilities`, "", "Numbers are the base ability with this build's stats; the upgrades are listed, not applied.", ""];
-    h.abilities.forEach((a, i) => {
-      const steps = order.map((s, n) => ({ ...s, n: n + 1 })).filter((s) => s.id === a.id);
-      const unlock = steps.find((s) => s.type === 2);
-      const bought = steps.filter((s) => s.type === 1);
-      const head = a.header || {};
-      const facts = [
-        a.ultimate ? "ultimate" : `ability ${i + 1}`,
-        head.cooldown && `cooldown ${head.cooldown}`,
-        head.charges && `${head.charges} charges`,
-        head.duration && `duration ${value({ value: head.duration, calc: head.duration_calc })}`,
-        unlock ? `unlocked at step ${unlock.n}` : "not in the ability order",
-      ].filter(Boolean).join(", ");
-      out.push(`### ${a.name} (${facts})`, "");
-      for (const s of a.tooltip) out.push(...section(s, ""));
-      (a.upgrades || []).slice(0, 3).forEach((u, t) => {
-        const text = [u.text && plain(u.text), u.bonuses.length && `[${u.bonuses.join(", ")}]`].filter(Boolean).join(" ");
-        out.push(`- Tier ${t + 1} upgrade (${TIER_COST[t]} AP, ${bought[t] ? `taken at step ${bought[t].n}` : "not taken"}): ${text}`);
-      });
-      out.push("");
+      if (s.type !== UNLOCK) tiers.set(s.id, (tiers.get(s.id) || 0) + 1);
+      out.push(`${i + 1}. ${number.get(s.id)}: ${s.type === UNLOCK ? "unlock" : `T${tiers.get(s.id)}`}`);
     });
     return out;
-  }
-
-  function heroStats(h) {
-    const p = h.panel;
-    const row = (title, list) => (list.length ? [`- ${title}: ${list.map(([k, v]) => `${k} ${v}`).join(", ")}`] : []);
-    return [`## ${h.name}'s base stats`, "", ...row("Weapon", p.weapon), ...row("Vitality", p.vitality), ...row("Spirit", p.spirit), ...row("Per level", p.per_level)];
   }
 
   /** The build in the editor as Markdown. */
   function buildText() {
-    const { state, hero, owned } = DL.editor;
+    const { state, hero } = DL.editor;
     const h = hero();
-    const have = owned();
     const name = oneLine($("ed-name").value) || (h ? `${h.name} build` : "Build");
     const description = $("ed-desc").value.trim();
     const out = [`# ${name}`, ""];
-    out.push(`A Deadlock build for ${h ? h.name : "a hero that isn't picked yet"}, exported from the build editor. Game version ${DL.data.version}.${state.gameBuildId ? ` Published in the game as build ID ${state.gameBuildId}.` : ""}`, "");
+    out.push(`A Deadlock build for ${h ? h.name : "a hero that isn't picked yet"}, game version ${DL.data.version}.${state.gameBuildId ? ` In-game build ID ${state.gameBuildId}.` : ""}`, "");
     if (description) out.push(description, "");
-    out.push("How to read it:", "");
-    out.push("- Items are listed in the build's categories and in buy order. A core category is added to the game's quick-buy; an optional one is not.");
-    out.push("- A value the build changes reads `131.8 (base 22; Spirit x0.6 × 183 = +109.8)`: the value now, the item's or ability's base value, and what was added. `Spirit x0.6` means every point of spirit power adds 0.6.");
-    out.push("- Applied: spirit scaling at the build's spirit power, and the build's ability duration, range and radius bonuses. Not applied: ability upgrades, cooldown reduction, hero level and boons, and weapon and melee scaling (marked `not applied`).", "");
-    out.push(...totals(h), "");
-    out.push("## Items", "");
+    out.push("## Items", "", "By category, in buy order. Core categories are added to the game's quick-buy; optional ones are not.", "");
     let n = 0;
     for (const c of state.cats) {
       out.push(`### ${oneLine(c.name) || "Items"} (${c.optional ? "optional" : "core"})`, "");
       if (c.description.trim()) out.push(c.description.trim(), "");
       if (!c.mods.length) out.push("No items.");
-      for (const m of c.mods) out.push(...item(m, ++n, have));
+      for (const m of c.mods) out.push(...item(m, ++n));
       out.push("");
     }
-    if (h) out.push(...abilityOrder(h, state.order), "", ...abilities(h, state.order), ...heroStats(h));
+    if (h) out.push(...abilityOrder(h, state.order));
     return { name, text: `${out.join("\n").trim()}\n` };
   }
 
@@ -180,7 +69,7 @@
 
   let url = null;
   $("ed-export").addEventListener("click", () => {
-    if (!DL.data || !DL.editor?.summary()) {
+    if (!DL.data || !DL.editor) {
       $("ed-msg").innerHTML = '<span class="neg">The game data isn’t loaded yet; try again in a moment.</span>';
       return;
     }
@@ -190,7 +79,7 @@
     url = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
     DL.sheet(`<div class="sheet-form export">
         <h2>Export build</h2>
-        <p class="muted small">The whole build as text, as it is now: items with their tooltips and this build's numbers, annotations, imbue targets, the ability order, souls and stats. Paste it into a chat with an AI.</p>
+        <p class="muted small">The build as text, as it is set up now: the categories, their items with imbue targets, sell priorities and notes, and the ability order. Paste it into a chat with an AI.</p>
         <div class="row">
           <button type="button" class="btn" data-copy>Copy</button>
           ${navigator.share ? '<button type="button" class="btn ghost" data-share>Share</button>' : ""}

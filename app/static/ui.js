@@ -76,8 +76,6 @@
     }
     return { value: v, steps, changed: Math.abs(v - c.base) > 1e-9 };
   }
-  // For the build export (export.js): the same numbers as text.
-  Object.assign(DL, { calc, fmt, round });
   /** `12.5s` with the unit set smaller, as the game does. */
   const number = (text) => {
     const m = /^([+-]?[\d.,]+)(.*)$/.exec(text);
