@@ -301,11 +301,21 @@
 
     const sum = (stat, postfix) => [...totals.values()].filter((t) => t.stat === stat && (postfix === undefined || t.postfix === postfix)).reduce((a, t) => a + t.value, 0);
     // Tooltips opened from here show their numbers with this build's stats applied.
+    // Which items a percentage bonus comes from, for the breakdown of a value.
+    const from = (stat) => [...all].filter((id) => !gone.has(id)).map((id) => DL.items.get(id))
+      .flatMap((it) => it.stats.filter((st) => st.stat === stat && st.postfix === "%").map((st) => [it.name, st.value, "%"]));
+    const itemSpirit = sum("MODIFIER_VALUE_TECH_POWER");
     DL.build = {
-      spirit: Math.round(sum("MODIFIER_VALUE_TECH_POWER") + reached.spirit),
+      spirit: Math.round(itemSpirit + reached.spirit),
       duration: sum("MODIFIER_VALUE_BONUS_ABILITY_DURATION_PERCENTAGE", "%"),
       range: sum("MODIFIER_VALUE_TECH_RANGE_PERCENT", "%"),
       radius: sum("MODIFIER_VALUE_TECH_RADIUS_PERCENT", "%"),
+      sources: {
+        spirit: [["Items", itemSpirit], ["Shop Bonuses", reached.spirit]].filter(([, v]) => v),
+        duration: from("MODIFIER_VALUE_BONUS_ABILITY_DURATION_PERCENTAGE"),
+        range: from("MODIFIER_VALUE_TECH_RANGE_PERCENT"),
+        radius: from("MODIFIER_VALUE_TECH_RADIUS_PERCENT"),
+      },
     };
     const rows = [];
     if (h) {

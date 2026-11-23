@@ -65,6 +65,9 @@ screen"; the last game data stays available offline). Styled after the game's ow
   In the build editor a value changed by the build shows as in the game's detail view, the
   base value struck through next to the current one: spirit scaling at the build's spirit
   power, and durations, ranges and radii with its ability duration, range and radius bonuses.
+  Numbers are rounded as the game prints them (at most one decimal, scaling multipliers two).
+  Clicking a calculated value opens its breakdown, like the game's stat formula panel: base,
+  what each stat adds and where that stat comes from, and the total to two decimals.
 - `/heroes/<id>`: weapon, vitality and spirit stats, per-level gains, every ability with its
   tooltip and 1/2/5 AP upgrades, and the investment payoffs of each shop category.
 - `/builds`: pick a hero, then browse the builds people published in the game (deadlock-api's

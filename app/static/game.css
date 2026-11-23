@@ -127,6 +127,26 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tip-sec.ability .tip-big.scaled { border-color: var(--box-spirit); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-spirit)); }
 .tip-sec.ability .tip-big.scaled.s-weapon, .tip-sec.ability .tip-big.scaled.s-melee { border-color: var(--box-weapon); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-weapon)); }
 .tip-sec.ability .tip-big.scaled.s-boon { border-color: var(--box-boon); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-boon)); }
+/* The breakdown of a calculated value, as the game's stat formula panel: base, what each stat
+   adds (and where the stat comes from, indented), the total on a darker band. */
+[data-formula] { cursor: pointer; }
+[data-formula]:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
+.formula-pop { position: fixed; z-index: 70; }
+.formula { width: 210px; padding-top: 5px; border-radius: 3px; background: var(--f-bg); color: var(--f-text); font-size: .78rem; box-shadow: 0 8px 28px rgb(0 0 0 / .5); overflow: hidden;
+  --f-bg: #414141; --f-text: #ffefd7; --f-total: #2f2f2f; --f-spirit: #ce90ff; --f-weapon: #ec9719; --f-boon: #99ffd6; }
+:root[data-theme="light"] .formula { --f-bg: #fbf8f1; --f-text: #2a2618; --f-total: #e9e2d2; --f-spirit: var(--spirit); --f-weapon: var(--weapon); --f-boon: var(--souls); border: 1px solid var(--line); }
+.formula h4 { margin: 0; padding: 1px 11px 4px; font: 700 .72rem/1.2 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .08em; opacity: .55; }
+.formula > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 1.5px 11px; }
+.formula .f-name { font-weight: 500; }
+.formula .f-name small { margin-left: 5px; font-size: .78em; font-weight: 600; }
+.formula .f-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.formula .f-main, .formula .f-total { font-weight: 700; }
+.formula .f-spirit { color: var(--f-spirit); }
+.formula .f-weapon, .formula .f-melee { color: var(--f-weapon); }
+.formula .f-boon { color: var(--f-boon); }
+.formula .f-sub { margin-left: 14px; opacity: .6; }
+.formula .f-zero { opacity: .2; }
+.formula .f-total { margin-top: 6px; padding: 4px 14px 6px; background: var(--f-total); }
 .tip-foot { padding: 8px 12px 12px; border-top: 1px solid var(--line); }
 .tip-foot h4 { margin: 4px 0 6px; font: 700 .78rem/1 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .tip-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px; }

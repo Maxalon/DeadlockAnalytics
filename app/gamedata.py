@@ -12,6 +12,7 @@ import json
 import re
 import sqlite3
 import threading
+from decimal import ROUND_HALF_UP, Decimal
 
 SLOTS = ("weapon", "vitality", "spirit")
 # What the souls spent in each shop category buy, per deadlock-api's `cost_bonuses`.
@@ -28,6 +29,14 @@ _SVG = re.compile(r"<svg\b.*?</svg>\s*", re.I | re.S)
 # Panorama layout tags around inline icons: dropped, their content kept.
 _PANEL = re.compile(r"</?Panel\b[^>]*>", re.I)
 # Inline stat icons: kept only when they come from deadlock-api's asset host.
+# How the game's tooltips round. Its data carries a display type per property that sets the
+# decimals (and rare per-property overrides); deadlock-api passes on neither. Its schema says
+# the decimals are a maximum, and what players report from the game fits one decimal for values
+# (a 6.36m radius reads 6.4m) and two for scaling multipliers (0.525 reads x0.53). Stats an item
+# gives the hero are typed (sprint speed 0.75 m/s, regen) and keep two.
+VALUE_DECIMALS = 1
+STAT_DECIMALS = 2
+UNITS_PER_METER = 39.37
 _UNIT = re.compile(r"^(-?\d+(?:\.\d+)?|-?\.\d+)\s*(m|s)$")
 # The game's scale functions that add `stat_scale` per point of one stat, and which stat that is:
 # named by the function's stat type, else implied by its class. (Other types only say which of
@@ -63,6 +72,14 @@ _IMG = re.compile(
 )
 
 
+_LONG_NUMBER = re.compile(r"(?<![\w.])\d+\.(?:\d{3,}|0+)(?![\w.]*\d)")
+
+
+def _prose(text: str) -> str:
+    """Escaped text, its numbers without the data's artifacts: 13.3333 -> 13.3, 10.0 -> 10."""
+    return html.escape(_LONG_NUMBER.sub(lambda m: _round(float(m.group()), VALUE_DECIMALS), text), quote=False)
+
+
 def clean_html(text: str | None) -> str:
     """Valve's description markup, made safe to render: only a few tags survive."""
     if not text:
@@ -74,16 +91,16 @@ def clean_html(text: str | None) -> str:
     out, pos = [], 0
     for m in re.finditer(f"{_TAG.pattern}|{_IMG.pattern}", text, re.I):
         if m.group(4):  # an inline icon
-            out.append(html.escape(text[pos : m.start()], quote=False))
+            out.append(_prose(text[pos : m.start()]))
             out.append(f'<img class="inline-icon" src="{html.escape(m.group(4))}" alt="">')
             pos = m.end()
             continue
-        out.append(html.escape(text[pos : m.start()], quote=False))
+        out.append(_prose(text[pos : m.start()]))
         close, tag, attrs = m.group(1), m.group(2).lower(), m.group(3)
         cls = _CLASS.search(attrs) if not close else None
         out.append(f"<{close}{tag}{f' class="{cls.group(1)}"' if cls else ''}>")
         pos = m.end()
-    out.append(html.escape(text[pos:], quote=False))
+    out.append(_prose(text[pos:]))
     return "".join(out)
 
 
@@ -100,9 +117,22 @@ def _num(value) -> float | None:
         return None
 
 
-def _fmt(value: float, signed: bool, postfix: str) -> str:
-    text = f"{value:+g}" if signed else f"{value:g}"
-    return f"{text}{postfix or ''}"
+def _round(value: float, places: int) -> str:
+    """A number as the game's tooltips print it: to at most `places` decimals, half up, without
+    trailing zeros (13.3333 -> 13.3, 0.525 -> 0.53)."""
+    d = Decimal(repr(float(value))).quantize(Decimal(1).scaleb(-places), ROUND_HALF_UP)
+    text = f"{d:f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
+
+
+def _fmt(value: float, signed: bool, postfix: str, places: int = VALUE_DECIMALS) -> str:
+    return f"{'+' if signed and value > 0 else ''}{_round(value, places)}{postfix or ''}"
+
+
+def _decimals(p: dict) -> int:
+    return STAT_DECIMALS if p.get("provided_property_type") else VALUE_DECIMALS
 
 
 def _parse(raw) -> tuple[float | None, str]:
@@ -115,7 +145,11 @@ def _parse(raw) -> tuple[float | None, str]:
 def _value(p: dict) -> tuple[float | None, str]:
     """A property's number and unit; None when it is unset (0, or the game's -1)."""
     v, unit = _parse(p.get("value"))
-    return (None if v in (None, 0, -1) else v), p.get("postfix") or unit
+    if v in (None, 0, -1):
+        return None, p.get("postfix") or unit
+    if not unit and p.get("display_units") == "EDisplayUnit_Meters":
+        v /= UNITS_PER_METER  # a distance without "m" is in the engine's units
+    return v, p.get("postfix") or unit
 
 
 def scaling(p: dict) -> dict | None:
@@ -131,7 +165,8 @@ def scaling(p: dict) -> dict | None:
 
 
 def _coef(per: float) -> str:
-    return f"{per:.2f}".rstrip("0").rstrip(".") if abs(per) >= 0.1 else f"{per:.2g}"
+    """A scaling multiplier as the game prints it: two decimals, three for the very small."""
+    return _round(per, 2 if abs(per) >= 0.01 else 3)
 
 
 def build_mods(p: dict) -> dict:
@@ -165,7 +200,7 @@ def item_stats(props: dict) -> list[dict]:
                 "label": label,
                 "value": v,
                 "postfix": postfix,
-                "text": _fmt(v, signed, postfix),
+                "text": _fmt(v, signed, postfix, _decimals(p)),
                 # Summable into build totals: a stat the item gives the hero, always on.
                 "stat": p.get("provided_property_type"),
                 "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -203,7 +238,7 @@ def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
     out = {
         "key": key,
         "label": p.get("label") or p.get("postvalue_label") or stat_label(key),
-        "value": _fmt(v, signed, postfix),
+        "value": _fmt(v, signed, postfix, _decimals(p)),
         "icon": icon or p.get("icon"),
         "css": p.get("css_class") or "",
         "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -213,7 +248,7 @@ def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
         out["scale"] = scale
     if scale or mods:
         # The number itself, so the editor can show the value with a build's stats applied.
-        out["calc"] = {"base": v, "signed": signed, "postfix": postfix, "mods": mods}
+        out["calc"] = {"base": v, "signed": signed, "postfix": postfix, "mods": mods, "dp": _decimals(p)}
     return out
 
 

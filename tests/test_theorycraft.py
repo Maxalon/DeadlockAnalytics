@@ -419,7 +419,7 @@ def test_scaling_and_distances():
     # The game's "x2.2" on the damage: what each point of spirit power adds.
     assert props["Damage"]["value"] == "65"
     assert props["Damage"]["scale"] == {"stat": "spirit", "per": 2.2, "text": "2.2"}
-    assert props["Damage"]["calc"] == {"base": 65.0, "signed": False, "postfix": "", "mods": {}}
+    assert props["Damage"]["calc"] == {"base": 65.0, "signed": False, "postfix": "", "mods": {}, "dp": 1}
     # A build's ability duration bonus applies to durations, whatever else they scale with.
     assert props["SleepDuration"]["calc"]["mods"] == {"duration": 1.0} and "scale" not in props["SleepDuration"]
     assert props["SleepWakeUpDelay"]["scale"]["stat"] == "spirit"
@@ -487,3 +487,34 @@ def test_scaling_and_distances():
     }
     up = gamedata._ability(ability)["upgrades"][0]
     assert up["bonuses"] == ["Impact Damage +0.25 Scaling", "Impact Damage +2m"]
+
+
+def test_numbers_as_the_game_prints_them():
+    # At most one decimal, half up, no trailing zeros; multipliers to two, the very small to three.
+    assert [gamedata._round(v, 1) for v in (13.3333, 6.36, 6.48, 2.75, 40.0, -10.0)] == [
+        "13.3",
+        "6.4",
+        "6.5",
+        "2.8",
+        "40",
+        "-10",
+    ]
+    assert [gamedata._coef(v) for v in (0.609336, 0.525, 0.015, 2.2, 0.002)] == ["0.61", "0.53", "0.02", "2.2", "0.002"]
+    props = {
+        "DPS": {"value": "13.3333", "label": "Damage Per Second"},
+        # A stat the item gives the hero is typed in the game's data and keeps two decimals.
+        "Sprint": {
+            "value": "0.75",
+            "label": "Sprint Speed",
+            "postfix": "m/s",
+            "provided_property_type": "MODIFIER_VALUE_SPRINT_SPEED",
+        },
+        # A distance without "m" is in engine units.
+        "Range": {"value": "472.441", "label": "Cast Range", "postfix": "m", "display_units": "EDisplayUnit_Meters"},
+    }
+    assert gamedata.prop(props, "DPS")["value"] == "13.3"
+    assert gamedata.prop(props, "Sprint")["value"] == "+0.75m/s"
+    assert gamedata.prop(props, "Range")["value"] == "12m"
+    # Prose keeps the numbers Valve wrote, without the data's artifacts.
+    text = gamedata.clean_html('<span class="highlight">+13.3333</span> DPS, -10.0% for 6.0s, 0.25s, 49.5')
+    assert text == '<span class="highlight">+13.3</span> DPS, -10% for 6s, 0.25s, 49.5'
