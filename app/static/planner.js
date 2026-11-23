@@ -65,7 +65,8 @@
 
   function targetLine() {
     const c = state.cats[target];
-    return c ? `Adding to <b>${esc(c.name || "Items")}</b> · tap an item to add it` : "";
+    const how = window.matchMedia("(pointer: coarse)").matches ? "tap an item to add it, hold it for details" : "tap an item to add it";
+    return c ? `Adding to <b>${esc(c.name || "Items")}</b> · ${how}` : "";
   }
 
   function renderCats() {
@@ -468,7 +469,16 @@
     for (const c of state.cats) for (const m of c.mods) m.imbue = imbueTarget(m)?.id ?? null;
     $("ed-name").value = state.name;
     $("ed-desc").value = state.description;
-    shop = DL.shop($("ed-shop"), { onPick: addItem, dim: (it) => owned().all.has(it.id) });
+    shop = DL.shop($("ed-shop"), {
+      onPick: addItem,
+      // Held on a touch screen: the item's tooltip, with the tap's action as a button.
+      onHold: (it, el) => {
+        const has = owned().all.has(it.id);
+        const sheet = DL.openTip(el, `<div class="tip-actions"><button type="button" class="btn" data-add ${has ? "disabled" : ""}>${has ? "In the build" : `Add to ${esc(state.cats[target]?.name || "Items")}`}</button></div>`);
+        sheet.querySelector("[data-add]").addEventListener("click", () => { DL.closeSheet(); addItem(it); });
+      },
+      dim: (it) => owned().all.has(it.id),
+    });
     renderAll();
     renderPublished();
   }).catch((err) => {

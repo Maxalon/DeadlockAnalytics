@@ -28,6 +28,8 @@
   padding: 9px 16px; border-radius: 6px; border: 1px solid var(--gold); background: var(--gold); color: #1a1408; cursor: pointer; }
 .btn.ghost { background: none; color: var(--gold); }
 .btn.small { padding: 6px 10px; font-size: .85rem; }
+.btn:disabled { opacity: .45; cursor: default; }
+.tip-actions .btn { min-height: 44px; flex: 1; justify-content: center; }
 .btn:hover { text-decoration: none; filter: brightness(1.08); }
 select, textarea { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
 textarea { width: 100%; resize: vertical; }
@@ -50,6 +52,10 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tile .tile-note { position: absolute; top: 3px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
 .tile:hover .tile-art, .tile:focus-visible .tile-art { border-color: var(--c); box-shadow: 0 0 0 1px var(--c), 0 0 14px -2px var(--c); }
 .tile.dim { opacity: .38; }
+/* The picture is never the target of a press: a long press on the tile then isn't one on an image. */
+.tile img { pointer-events: none; -webkit-user-drag: none; }
+/* Tiles that take a long press (DL.onHold): no text selection, no iOS callout. */
+.holdable .tile { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 .tile.small { width: 54px; }
 .tile.small .tile-art { width: 54px; height: 54px; }
 .tile.small .tile-name { max-width: 54px; font-size: .66rem; }

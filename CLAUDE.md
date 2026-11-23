@@ -11,6 +11,9 @@ installed app on Android). Every feature has to be comfortable to use by touch:
 - Tap targets are at least 40px high and don't sit so close that a thumb hits the wrong one.
 - Popovers and sheets open, stay on screen and close by touch; a tap outside closes only the
   topmost one.
+- A long press is available for a second action on something a tap already uses (`DL.onHold`
+  in `app/static/ui.js`; it cancels the browser's own long-press menu). Say so on the page where
+  it applies, since nothing else reveals it, and offer the tap's action inside what it opens.
 - Text stays readable at 360px wide, nothing overflows its box, and the page never scrolls
   sideways.
 - Before calling UI work done, check it in a phone-sized touch viewport (Playwright with

@@ -222,6 +222,66 @@
       DL.closeSheet();
     }
   });
+  // ---- long press ----
+  const HOLD_MS = 450;
+  let swallowClicksUntil = 0;
+  // The tap a browser may still deliver when the finger lifts after a long press: dropped, so it
+  // doesn't press whatever the press opened under the finger. Registered before every other
+  // click handling here.
+  document.addEventListener("click", (e) => {
+    if (performance.now() < swallowClicksUntil) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+  /**
+   * A long press on a touch screen: `handler(el)` for the element matching `selector` under the
+   * finger once it has rested for HOLD_MS; moving the finger (a scroll) cancels. The browser's
+   * own long-press menu (Chrome's for images and links) and the tap that would follow are
+   * suppressed. Chrome reports a long press as `contextmenu`, iOS Safari doesn't, so both that
+   * and a timer are used. A mouse is left alone: it has hover and its right click.
+   */
+  DL.onHold = (root, selector, handler) => {
+    let timer = null;
+    let start = null;
+    let held = false;
+    let touch = false;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    const fire = (el) => {
+      if (held || !el.isConnected) return;
+      held = true;
+      cancel();
+      swallowClicksUntil = performance.now() + 4000;  // until the finger lifts
+      navigator.vibrate?.(10);
+      handler(el);
+    };
+    root.addEventListener("pointerdown", (e) => {
+      touch = e.pointerType !== "mouse";
+      held = false;
+      cancel();
+      const el = e.target.closest(selector);
+      if (!touch || !el || !e.isPrimary) return;
+      start = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(() => fire(el), HOLD_MS);
+    });
+    root.addEventListener("pointermove", (e) => {
+      if (timer && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
+    });
+    const lift = () => {
+      cancel();
+      if (held) swallowClicksUntil = performance.now() + 350;
+      held = false;
+    };
+    // On window: by the time the finger lifts, the press may have opened a sheet over `root`.
+    for (const type of ["pointerup", "pointercancel"]) window.addEventListener(type, lift, true);
+    root.addEventListener("contextmenu", (e) => {
+      const el = e.target.closest(selector);
+      if (!touch || !el) return;
+      e.preventDefault();
+      fire(el);
+    });
+  };
+
   // ---- breakdown of a calculated value ----
   let formulaPop = null;
   const closeFormula = () => {
@@ -280,7 +340,8 @@
   // ---- shop ----
   /**
    * The in-game shop in `root`: category tabs, a search box, one row per tier.
-   * opts.onPick(item, tileEl) is called on a tap (default: open the tooltip);
+   * opts.onPick(item, tileEl) is called on a tap (default: open the tooltip); with it, a
+   * long press on a touch screen calls opts.onHold(item, tileEl) (default: open the tooltip);
    * opts.dim(item) dims owned items.
    */
   DL.shop = (root, opts = {}) => {
@@ -317,6 +378,11 @@
       if (opts.onPick) opts.onPick(it, el);
       else DL.openTip(el);
     });
+    // Where a tap does something else, the tooltip is a long press away on a touch screen.
+    if (opts.onPick) {
+      root.classList.add("holdable");
+      DL.onHold(body, "[data-item]", (el) => (opts.onHold ? opts.onHold(DL.items.get(Number(el.dataset.item)), el) : DL.openTip(el)));
+    }
     render();
     /** Only re-dim owned items: no re-render, so the images don't load again. */
     const refresh = () => {
