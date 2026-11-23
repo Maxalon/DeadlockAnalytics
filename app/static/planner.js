@@ -459,6 +459,8 @@
   });
   $("ed-name").addEventListener("input", markDirty);
   $("ed-desc").addEventListener("input", markDirty);
+  // What the export (export.js) reads: the build as it is now, saved or not.
+  DL.editor = { state, hero, imbueTarget };
 
   DL.load().then(() => {
     // Items no longer in the game are dropped, and the ability order is checked again.

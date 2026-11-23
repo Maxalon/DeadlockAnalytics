@@ -292,12 +292,18 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .ed-stats div { break-inside: avoid; display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
 .ed-stats b { font-variant-numeric: tabular-nums; }
 .ed-save { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ed-save .btn { min-height: 40px; }
 .ed-msg { font-size: .85rem; }
 .ed-published { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--souls); background: color-mix(in srgb, var(--souls) 10%, var(--panel)); font-size: .88rem; }
 .ed-published b { font-size: 1.2rem; color: var(--souls); }
 .sheet-form { display: grid; gap: 8px; padding: 0 12px 14px; }
 .sheet-form label { font-size: .8rem; color: var(--muted); }
 .sheet-form .row { display: flex; gap: 6px; flex-wrap: wrap; }
+.export h2 { margin: 0; font-size: 1.05rem; }
+.export p { margin: 0; }
+.export .row { gap: 8px; }
+.export .btn { min-height: 44px; }
+.export textarea { height: 38vh; resize: none; font: .72rem/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hero-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; padding: 0 12px 16px; }
 
 @media (max-width: 900px) {

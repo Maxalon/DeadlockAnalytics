@@ -33,6 +33,7 @@
             <button type="button" class="btn" id="ed-save">Save</button>
             {% if saved %}<button type="button" class="btn ghost" id="ed-save-new">Save as new</button>{% endif %}
             {% if publishing %}<button type="button" class="btn ghost" id="ed-publish" title="The Steam bot publishes it to the game's build browser">Publish to game</button>{% endif %}
+            <button type="button" class="btn ghost" id="ed-export" title="The whole build as text, to paste into a chat with an AI">Export</button>
             <span class="ed-msg" id="ed-msg"></span>
           </div>
           <div id="ed-published" style="margin-top:10px"></div>
@@ -79,4 +80,4 @@
 </div>
 {% endif %}
 {% endblock %}
-{% block scripts %}<script src="{{ asset('planner.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ asset('planner.js') }}"></script><script src="{{ asset('export.js') }}"></script>{% endblock %}

@@ -80,6 +80,12 @@ screen"; the last game data stays available offline). Styled after the game's ow
   unchanged.
   Builds are saved per player ("Who are you?" in the menu). On phones it has Build / Shop /
   Abilities / Stats tabs.
+- "Export" in the editor: the build as text (Markdown) to copy, share or download, for pasting
+  into a chat with an AI. It holds what is set up in the editor, as it is now, saved or not:
+  the hero, name and description, the categories (core or optional, with their descriptions),
+  their items by name with imbue target, sell priority and note, and the ability order (the
+  abilities named once, then each step by number). No tooltips or stats. It is written in the
+  browser, so it works without the fetcher.
 - "Publish to game" (needs the fetcher): the Steam bot publishes the build to the game's build
   browser, then you search its build ID in game. Published builds are public and authored by the
   bot account; `BOT_BUILD_PUBLISHES_PER_DAY` (default 20) limits them.
