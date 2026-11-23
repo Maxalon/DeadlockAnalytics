@@ -127,8 +127,18 @@ def _round(value: float, places: int) -> str:
     return "0" if text in ("", "-0") else text
 
 
-def _fmt(value: float, signed: bool, postfix: str, places: int = VALUE_DECIMALS) -> str:
-    return f"{'+' if signed and value > 0 else ''}{_round(value, places)}{postfix or ''}"
+def _sign(p: dict) -> str:
+    """How the game prefixes a property's number: "sign" by its sign (+12, -3), a literal "+" or
+    "-" (a slow is written 40 and shown -40%), or "" for none."""
+    prefix = (p.get("prefix") or "").strip()
+    if "{s:sign}" in prefix:
+        return "sign"
+    return prefix if prefix in ("+", "-") else ""
+
+
+def _fmt(value: float, sign: str, postfix: str, places: int = VALUE_DECIMALS) -> str:
+    lead = ("+" if sign == "sign" else sign) if value > 0 else ""
+    return f"{lead}{_round(value, places)}{postfix or ''}"
 
 
 def _decimals(p: dict) -> int:
@@ -193,14 +203,15 @@ def item_stats(props: dict) -> list[dict]:
         v, postfix = _value(p)
         if not label or v is None:
             continue
-        signed = "{s:sign}" in (p.get("prefix") or "") or bool(p.get("provided_property_type"))
+        sign = _sign(p)
         out.append(
             {
                 "key": key,
                 "label": label,
-                "value": v,
+                # As a number to sum: what the game shows with a minus counts as one.
+                "value": -v if sign == "-" and v > 0 else v,
                 "postfix": postfix,
-                "text": _fmt(v, signed, postfix, _decimals(p)),
+                "text": _fmt(v, sign, postfix, _decimals(p)),
                 # Summable into build totals: a stat the item gives the hero, always on.
                 "stat": p.get("provided_property_type"),
                 "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -234,11 +245,11 @@ def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
     if v is None and not (scale and _parse(p.get("value"))[0] == 0):
         return None
     v = v or 0.0
-    signed = "{s:sign}" in (p.get("prefix") or "") or bool(p.get("provided_property_type"))
+    sign = _sign(p)
     out = {
         "key": key,
         "label": p.get("label") or p.get("postvalue_label") or stat_label(key),
-        "value": _fmt(v, signed, postfix, _decimals(p)),
+        "value": _fmt(v, sign, postfix, _decimals(p)),
         "icon": icon or p.get("icon"),
         "css": p.get("css_class") or "",
         "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -248,7 +259,7 @@ def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
         out["scale"] = scale
     if scale or mods:
         # The number itself, so the editor can show the value with a build's stats applied.
-        out["calc"] = {"base": v, "signed": signed, "postfix": postfix, "mods": mods, "dp": _decimals(p)}
+        out["calc"] = {"base": v, "sign": sign, "postfix": postfix, "mods": mods, "dp": _decimals(p)}
     return out
 
 
@@ -375,11 +386,16 @@ def _ability(raw: dict | None) -> dict | None:
             label = p.get("label") or stat_label(pu.get("name", ""))
             kind = pu.get("upgrade_type")
             if kind in ("EAddToScale", "EMultiplyScale"):
-                text = f"+{_coef(v)}" if kind == "EAddToScale" else f"x{_coef(v)}"
-                bonuses.append(f"{label} {text} Scaling")
+                bonuses.append((f"+{_coef(v)}" if kind == "EAddToScale" else f"x{_coef(v)}", f"{label} Scaling"))
             else:
-                bonuses.append(f"{label} {_fmt(v, True, p.get('postfix') or unit)}")
-        upgrades.append({"text": d["tiers"][n] if n < 3 else "", "bonuses": bonuses})
+                bonuses.append((_fmt(v, "sign", p.get("postfix") or unit), label))
+        # Where Valve wrote no text for an upgrade, its changes in the wording of the ones it
+        # did write: "+4s Duration".
+        written = d["tiers"][n] if n < 3 else ""
+        generated = "<br>".join(
+            f'<span class="highlight">{html.escape(value)}</span> {html.escape(name)}' for value, name in bonuses
+        )
+        upgrades.append({"text": written or generated, "bonuses": [f"{value} {name}" for value, name in bonuses]})
     return {
         "id": raw["id"],
         "name": raw["name"],
