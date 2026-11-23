@@ -119,8 +119,8 @@ def _value(p: dict) -> tuple[float | None, str]:
 
 
 def scaling(p: dict) -> dict | None:
-    """What a property grows with, as the game's `×0.61` next to a value: each point of the
-    stat (spirit power, boons, ...) adds `per` to it."""
+    """What a property grows with, as the game's arrow and `x0.61` on a value: each point of
+    the stat (spirit power, boons, ...) adds `per` to it."""
     sf = p.get("scale_function") or {}
     per = _num(sf.get("stat_scale"))
     kind = sf.get("specific_stat_scale_type")
@@ -328,7 +328,7 @@ def _ability(raw: dict | None) -> dict | None:
     stats = item_stats(raw.get("properties"))
     upgrades = []
     for n, up in enumerate(raw.get("upgrades") or []):
-        bonuses, scales = [], []
+        bonuses = []
         for pu in up.get("property_upgrades") or []:
             p = (raw.get("properties") or {}).get(pu.get("name"), {})
             v, unit = _parse(pu.get("bonus"))
@@ -337,14 +337,11 @@ def _ability(raw: dict | None) -> dict | None:
             label = p.get("label") or stat_label(pu.get("name", ""))
             kind = pu.get("upgrade_type")
             if kind in ("EAddToScale", "EMultiplyScale"):
-                # Valve's text only says "improved spirit scaling": the number, next to it.
-                stat = _SCALE_STATS.get(pu.get("scale_stat_filter")) or (scaling(p) or {}).get("stat")
-                if stat:
-                    text = f"+{_coef(v)}" if kind == "EAddToScale" else f"×{_coef(v)}"
-                    scales.append({"stat": stat, "label": label, "text": text})
+                text = f"+{_coef(v)}" if kind == "EAddToScale" else f"x{_coef(v)}"
+                bonuses.append(f"{label} {text} Scaling")
             else:
                 bonuses.append(f"{label} {_fmt(v, True, p.get('postfix') or unit)}")
-        upgrades.append({"text": d["tiers"][n] if n < 3 else "", "bonuses": bonuses, "scales": scales})
+        upgrades.append({"text": d["tiers"][n] if n < 3 else "", "bonuses": bonuses})
     return {
         "id": raw["id"],
         "name": raw["name"],

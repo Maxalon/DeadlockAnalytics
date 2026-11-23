@@ -38,9 +38,11 @@
       <span class="tile-name">${esc(it.name)}</span>${opts.cost === false ? "" : `<span class="tile-cost souls">${num(it.cost)}</span>`}
     </button>`;
 
-  // Scaling, as the game's `×0.61` next to a value: what each point of a stat adds to it.
-  const SCALE_STATS = { spirit: "spirit power", boon: "boon", melee: "melee damage", weapon: "weapon damage" };
-  const BUILD_MODS = { duration: "ability duration", range: "ability range", radius: "radius" };
+  // Values and scaling as the game draws them (its citadel_ability_property_panel and
+  // citadel_stat_scaling_label panels): the stat's arrow glyph with `x0.61` under it in the
+  // top right corner; with a build, the current value next to the struck-through base value.
+  const ARROWS = "https://assets-bucket.deadlock-api.com/assets-api-res/images/shop/keystat_";
+  const SCALE_STATS = { spirit: ["spirit", "Spirit"], weapon: ["courage", "Weapon"], melee: ["melee", "Melee"], boon: ["boon", "Boons"] };
   /** A property's number with the build's stats applied (DL.build, set by the build editor):
    *  spirit scaling first, then the percentage bonuses to durations, ranges and radii. */
   function calc(p) {
@@ -49,34 +51,28 @@
     if (!c || !b) return null;
     let v = c.base + (p.scale?.stat === "spirit" ? p.scale.per * b.spirit : 0);
     for (const [k, strength] of Object.entries(c.mods)) v *= 1 + (strength * (b[k] || 0)) / 100;
-    return v === c.base ? null : v;
-  }
-  function shown(p) {
-    const v = calc(p);
-    if (v === null) return esc(p.value);
-    const c = p.calc;
+    if (v === c.base) return null;
     const unit = Math.abs(v) < 10 ? 100 : 10;
-    return `<span class="calc" title="${esc(p.value)} without this build">${c.signed && v > 0 ? "+" : ""}${Math.round(v * unit) / unit}${esc(c.postfix)}</span>`;
+    return `${c.signed && v > 0 ? "+" : ""}${Math.round(v * unit) / unit}${c.postfix}`;
   }
-  const badge = (sc, text = `×${sc.text}`) => `<i class="scale s-${esc(sc.stat)}" title="${esc(text)} per ${esc(SCALE_STATS[sc.stat] || sc.stat)}">${esc(text)}</i>`;
+  /** `12.5s` with the unit set smaller, as the game does. */
+  const number = (text) => {
+    const m = /^([+-]?[\d.,]+)(.*)$/.exec(text);
+    return m ? `${esc(m[1])}${m[2] ? `<small>${esc(m[2])}</small>` : ""}` : esc(text);
+  };
+  function shown(p) {
+    const now = calc(p);
+    return now === null ? `<b>${number(p.value)}</b>` : `<s>${number(p.value)}</s><b>${number(now)}</b>`;
+  }
+  function scaling(sc) {
+    if (!sc || !SCALE_STATS[sc.stat]) return "";
+    const [img, name] = SCALE_STATS[sc.stat];
+    return `<span class="sc s-${esc(sc.stat)}" title="${esc(name)} x${esc(sc.text)}"><img src="${ARROWS}${img}_arrow.png" alt="${esc(name)}"><span><i>x</i>${esc(sc.text)}</span></span>`;
+  }
+  const icon = (p) => (p.icon ? `<img src="${esc(p.icon)}" alt="">` : "");
   const line = (p, big) => big
-    ? `<div class="tip-big">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${shown(p)}${p.scale ? badge(p.scale) : ""}</b><span>${esc(p.label)}</span></div>`
-    : `<div class="tip-line${p.conditional ? " cond" : ""}">${p.icon ? `<img src="${esc(p.icon)}" alt="">` : ""}<b>${shown(p)}</b>${p.scale ? badge(p.scale) : ""} ${esc(p.label)}${p.conditional ? " <small>(conditional)</small>" : ""}</div>`;
-  /** Under a tooltip: what its badges mean, and which of the build's stats its numbers include. */
-  function scaleNote(list, upgrades = []) {
-    const props = list.flatMap((s) => [...s.big, ...s.lines, ...(s.duration_calc ? [{ calc: s.duration_calc }] : [])]);
-    const stats = new Set(upgrades.flatMap((u) => (u.scales || []).map((x) => x.stat)));
-    for (const p of props) if (p.scale) stats.add(p.scale.stat);
-    const legend = Object.keys(SCALE_STATS).filter((k) => stats.has(k)).map((k) => `<i class="scale s-${k}">×</i> per ${SCALE_STATS[k]}`).join(" · ");
-    const b = DL.build;
-    const used = [];
-    if (stats.has("spirit")) used.push(`<b>${num(b ? b.spirit : 0)}</b> spirit power`);
-    for (const [k, label] of Object.entries(BUILD_MODS)) {
-      if (b?.[k] && props.some((p) => p.calc?.mods[k])) used.push(`<b>+${num(b[k])}%</b> ${label}`);
-    }
-    const at = used.length ? `Values at ${b ? "this build's " : ""}${used.join(", ")}.` : "";
-    return legend || at ? `<p class="tip-scale-note">${legend}${legend && at ? "<br>" : ""}${at}</p>` : "";
-  }
+    ? `<div class="tip-big${p.scale ? ` scaled s-${esc(p.scale.stat)}` : ""}"><div class="tip-val">${icon(p)}${shown(p)}</div><span>${esc(p.label)}</span>${scaling(p.scale)}</div>`
+    : `<div class="tip-line${p.conditional ? " cond" : ""}">${icon(p)}<span class="tip-val">${shown(p)}</span> ${esc(p.label)}${p.conditional ? " <small>(conditional)</small>" : ""}${scaling(p.scale)}</div>`;
 
   function sections(list) {
     return list.map((s) => {
@@ -84,7 +80,7 @@
         const rows = [...s.big, ...s.lines].map((p) => line(p, false)).join("");
         return rows || s.text ? `<div class="tip-innate">${s.text ? `<p class="tip-text">${html(s.text)}</p>` : ""}${rows}</div>` : "";
       }
-      const head = s.type === "ability" ? "" : `<div class="tip-sec-head"><span>${s.type === "active" ? "Active" : "Passive"}</span><span class="cd">${s.cooldown ? `⟳ ${esc(s.cooldown)}` : ""}${s.duration ? ` ⧗ ${shown({ value: s.duration, calc: s.duration_calc })}` : ""}</span></div>`;
+      const head = s.type === "ability" ? "" : `<div class="tip-sec-head"><span>${s.type === "active" ? "Active" : "Passive"}</span><span class="cd">${s.cooldown ? `⟳ ${esc(s.cooldown)}` : ""}${s.duration ? ` <span class="tip-val">⧗ ${shown({ value: s.duration, calc: s.duration_calc })}</span>` : ""}</span></div>`;
       return `<div class="tip-sec ${esc(s.type)}">${head}${s.text ? `<p class="tip-text">${html(s.text)}</p>` : ""}${s.big.length ? `<div class="tip-bigs">${s.big.map((p) => line(p, true)).join("")}</div>` : ""}${s.lines.length ? `<div class="tip-lines">${s.lines.map((p) => line(p, false)).join("")}</div>` : ""}</div>`;
     }).join("");
   }
@@ -95,7 +91,7 @@
     const foot = (title, list) => list.length ? `<h4>${title}</h4><div class="tile-row">${list.map((x) => DL.tile(x, { small: true })).join("")}</div>` : "";
     return `<div class="tip slot-${esc(it.slot)}">
       <div class="tip-head"><img src="${esc(it.image)}" alt=""><div class="tip-title"><h3>${esc(it.name)}</h3><span class="tip-sub">${esc(SLOT_NAMES[it.slot] || it.slot)} · Tier ${Number(it.tier)}${it.active ? " · Active" : ""}</span></div><span class="souls">${num(it.cost)}</span></div>
-      ${sections(it.tooltip)}${scaleNote(it.tooltip)}
+      ${sections(it.tooltip)}
       ${from.length || into.length ? `<div class="tip-foot">${foot("Builds from", from)}${foot("Upgrades into", into)}</div>` : ""}
       ${extra}
     </div>`;
@@ -103,11 +99,11 @@
 
   DL.abilityTip = (a, extra = "") => {
     const head = a.header || {};
-    const tiers = (a.upgrades || []).slice(0, 3).map((u, i) => `<div class="tip-tier"><span class="ap">${[1, 2, 5][i]} AP</span>${u.text ? html(u.text) : esc(u.bonuses.join(", "))}${(u.scales || []).map((x) => `<span class="tip-tier-scale">${badge(x, x.text)} ${esc(x.label)}</span>`).join("")}</div>`).join("");
+    const tiers = (a.upgrades || []).slice(0, 3).map((u, i) => `<div class="tip-tier"><span class="ap">${[1, 2, 5][i]} AP</span>${u.text ? html(u.text) : esc(u.bonuses.join(", "))}</div>`).join("");
     return `<div class="tip">
       <div class="tip-head"><img src="${esc(a.image)}" alt="" style="background:#222;border-radius:8px;padding:4px"><div class="tip-title"><h3>${esc(a.name)}</h3><span class="tip-sub">${a.ultimate ? "Ultimate" : "Ability"}${a.quip ? " · " + html(a.quip) : ""}</span></div>
         <span class="cd" style="text-align:right;font-size:.85rem">${head.cooldown ? `⟳ ${esc(head.cooldown)}` : ""}${head.charges ? `<br>${esc(head.charges)} charges` : ""}</span></div>
-      ${sections(a.tooltip)}${scaleNote(a.tooltip, a.upgrades || [])}
+      ${sections(a.tooltip)}
       ${tiers ? `<div class="tip-tiers">${tiers}</div>` : ""}
       ${extra}
     </div>`;

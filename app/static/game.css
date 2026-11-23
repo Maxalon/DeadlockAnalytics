@@ -82,25 +82,51 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tip-sec-head .cd { display: inline-flex; gap: 10px; color: var(--text); letter-spacing: 0; }
 .tip-text { padding: 8px 10px 4px; margin: 0; }
 .tip-bigs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
-.tip-big { flex: 1 1 90px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border-radius: 6px; background: var(--panel-2); text-align: center; }
-.tip-big img { width: 22px; height: 22px; }
-.tip-big b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
-.tip-big span { font-size: .72rem; color: var(--muted); line-height: 1.15; }
+.tip-big { position: relative; flex: 1 1 90px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 58px; padding: 6px 4px;
+  border: 1.5px solid transparent; background: var(--panel-2); text-align: center; }
+.tip-big > span:not(.sc) { font-size: .72rem; color: var(--muted); line-height: 1.15; }
+/* A value as the game sets it: icon, the base value struck through when a build changed it, the
+   current value, units smaller. Sizes are the game's (26px value in a 500px tooltip) at this width. */
+.tip-val { display: inline-flex; align-items: baseline; justify-content: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.tip-val img { align-self: center; flex: none; }
+.tip-val b small { font-weight: 600; }
+.tip-val s { color: var(--struck); font-weight: 600; }
+.tip-big .tip-val img { width: 15px; height: 15px; }
+.tip-big .tip-val b { font-size: 1.15rem; line-height: 1.2; }
+.tip-big .tip-val b small { font-size: .7em; color: var(--unit); }
+.tip-big .tip-val s { font-size: .88rem; }
+.tip-sec.ability .tip-big .tip-val img { opacity: .3; }
 .tip-lines { padding: 4px 10px 8px; display: grid; gap: 2px; }
-.tip-line { display: flex; align-items: center; gap: 6px; }
-.tip-line img { width: 16px; height: 16px; flex: none; }
-.tip-line b { font-variant-numeric: tabular-nums; }
+.tip-line { position: relative; display: flex; align-items: center; gap: 6px; }
+.tip-line > img { width: 16px; height: 16px; flex: none; }
+.tip-line .tip-val b small { font-size: .88em; }
 .tip-line.cond { color: var(--muted); }
 .tip-innate .tip-line b { color: var(--c, var(--text)); }
-.scale { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: .72rem; font-weight: 700; line-height: 1.5; font-style: normal; font-variant-numeric: tabular-nums;
-  color: var(--sc); background: color-mix(in srgb, var(--sc) 18%, transparent); border: 1px solid color-mix(in srgb, var(--sc) 45%, transparent); white-space: nowrap; }
-.scale.s-spirit { --sc: var(--spirit); }
-.scale.s-weapon, .scale.s-melee { --sc: var(--weapon); }
-.scale.s-boon { --sc: var(--gold); }
-.tip-big b .scale { margin-left: 4px; vertical-align: 2px; }
-.calc { text-decoration: underline dotted; text-decoration-color: var(--muted); text-underline-offset: 3px; }
-.tip-scale-note { margin: 0; padding: 2px 12px 8px; font-size: .75rem; color: var(--muted); }
-.tip-tier-scale { display: block; margin-top: 3px; }
+.tip-sec-head .tip-val { gap: 3px; }
+/* What a value scales with: the stat's arrow, `x0.61` under it, in the box's top right corner.
+   A scaled ability box takes the stat's border and glow. */
+.tip { --struck: #ffffff40; --unit: #a4a4a4; --sc-spirit: #e7c8ff; --sc-weapon: #ffd18d; --sc-boon: #53e1c4; --sc-x: #ffffff86; --sc-shadow: 0 0 3px #10130d;
+  --box-spirit: rgb(138 85 179 / .4); --glow-spirit: rgb(97 52 132 / .5); --box-weapon: rgb(157 98 11 / .3); --glow-weapon: rgb(127 84 14 / .3);
+  --box-boon: rgb(153 255 214 / .1); --glow-boon: rgb(153 255 214 / .1); --glow-mid: #00000080; }
+:root[data-theme="light"] .tip { --struck: #00000055; --unit: #6d675b; --sc-spirit: var(--spirit); --sc-weapon: var(--weapon); --sc-boon: var(--souls); --sc-x: #00000070; --sc-shadow: none;
+  --box-spirit: rgb(138 85 179 / .45); --glow-spirit: rgb(138 85 179 / .22); --box-weapon: rgb(157 98 11 / .45); --glow-weapon: rgb(157 98 11 / .2);
+  --box-boon: rgb(31 143 119 / .4); --glow-boon: rgb(31 143 119 / .16); --glow-mid: #ffffff00; }
+.sc { position: absolute; top: -2px; right: 1px; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
+.sc img { width: 21px; height: 16px; object-fit: contain; object-position: right; }
+.sc span { margin: -3px 1px 0 0; font-size: .6rem; font-weight: 600; line-height: 1; color: var(--sc); text-shadow: var(--sc-shadow); white-space: nowrap; }
+.sc i { margin-right: 1px; font-weight: 700; color: var(--sc-x); }
+.sc.s-spirit { --sc: var(--sc-spirit); }
+.sc.s-weapon, .sc.s-melee { --sc: var(--sc-weapon); }
+.sc.s-boon { --sc: var(--sc-boon); }
+.tip-line .sc { position: static; margin: -2px 0 -2px auto; }
+.tip-sec.ability .tip-bigs { padding-top: 13px; }
+.tip-sec.ability .tip-big { padding-top: 13px; }  /* room for `x0.61` above the value in narrow boxes */
+.tip-sec.ability .tip-big .sc { top: -10px; }
+.tip-sec.ability .tip-big .sc img { width: 26px; height: 19px; }
+.tip-sec.ability .tip-big .sc span { font-size: .66rem; margin-top: -4px; }
+.tip-sec.ability .tip-big.scaled { border-color: var(--box-spirit); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-spirit)); }
+.tip-sec.ability .tip-big.scaled.s-weapon, .tip-sec.ability .tip-big.scaled.s-melee { border-color: var(--box-weapon); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-weapon)); }
+.tip-sec.ability .tip-big.scaled.s-boon { border-color: var(--box-boon); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-boon)); }
 .tip-foot { padding: 8px 12px 12px; border-top: 1px solid var(--line); }
 .tip-foot h4 { margin: 4px 0 6px; font: 700 .78rem/1 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .tip-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px; }

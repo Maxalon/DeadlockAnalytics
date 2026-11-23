@@ -416,7 +416,7 @@ def test_scaling_and_distances():
     data = gamedata.normalise(GAME["items"], GAME["heroes"], GAME["generic"])
     dagger = next(a for a in data["heroes_by_id"][HAZE]["abilities"] if a["name"] == "Sleep Dagger")
     props = {p["key"]: p for s in dagger["tooltip"] for p in s["big"] + s["lines"]}
-    # The game's "×2.2" next to the damage: what each point of spirit power adds.
+    # The game's "x2.2" on the damage: what each point of spirit power adds.
     assert props["Damage"]["value"] == "65"
     assert props["Damage"]["scale"] == {"stat": "spirit", "per": 2.2, "text": "2.2"}
     assert props["Damage"]["calc"] == {"base": 65.0, "signed": False, "postfix": "", "mods": {}}
@@ -471,7 +471,7 @@ def test_scaling_and_distances():
     assert gamedata.prop(props, "Radius") is None
     assert gamedata.prop(props, "Heal")["value"] == "0" and gamedata.prop(props, "Heal")["scale"]["text"] == "0.6"
 
-    # An upgrade that improves scaling says by how much (Valve's text only says "improved").
+    # Without Valve's text for an upgrade, its changes are listed; one to scaling says so.
     ability = {
         "id": 1,
         "name": "Keg",
@@ -486,5 +486,4 @@ def test_scaling_and_distances():
         ],
     }
     up = gamedata._ability(ability)["upgrades"][0]
-    assert up["scales"] == [{"stat": "spirit", "label": "Impact Damage", "text": "+0.25"}]
-    assert up["bonuses"] == ["Impact Damage +2m"]
+    assert up["bonuses"] == ["Impact Damage +0.25 Scaling", "Impact Damage +2m"]
