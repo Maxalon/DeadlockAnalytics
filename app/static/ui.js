@@ -111,6 +111,9 @@
     return `<div class="formula"><h4>${esc(p.label)}</h4>${rows.join("")}${row("f-total", "Total", two(r.value, c.signed))}</div>`;
   }
 
+  const hint = (list) => (list.some((s) => [...s.big, ...s.lines].some((p) => p.calc))
+    ? '<p class="tip-hint">Tap a value to see how it is calculated.</p>' : "");
+
   function sections(list) {
     return list.map((s) => {
       if (s.type === "innate") {
@@ -128,7 +131,7 @@
     const foot = (title, list) => list.length ? `<h4>${title}</h4><div class="tile-row">${list.map((x) => DL.tile(x, { small: true })).join("")}</div>` : "";
     return `<div class="tip slot-${esc(it.slot)}">
       <div class="tip-head"><img src="${esc(it.image)}" alt=""><div class="tip-title"><h3>${esc(it.name)}</h3><span class="tip-sub">${esc(SLOT_NAMES[it.slot] || it.slot)} · Tier ${Number(it.tier)}${it.active ? " · Active" : ""}</span></div><span class="souls">${num(it.cost)}</span></div>
-      ${sections(it.tooltip)}
+      ${sections(it.tooltip)}${hint(it.tooltip)}
       ${from.length || into.length ? `<div class="tip-foot">${foot("Builds from", from)}${foot("Upgrades into", into)}</div>` : ""}
       ${extra}
     </div>`;
@@ -140,7 +143,7 @@
     return `<div class="tip">
       <div class="tip-head"><img src="${esc(a.image)}" alt="" style="background:#222;border-radius:8px;padding:4px"><div class="tip-title"><h3>${esc(a.name)}</h3><span class="tip-sub">${a.ultimate ? "Ultimate" : "Ability"}${a.quip ? " · " + html(a.quip) : ""}</span></div>
         <span class="cd" style="text-align:right;font-size:.85rem">${head.cooldown ? `⟳ ${esc(head.cooldown)}` : ""}${head.charges ? `<br>${esc(head.charges)} charges` : ""}</span></div>
-      ${sections(a.tooltip)}
+      ${sections(a.tooltip)}${hint(a.tooltip)}
       ${tiers ? `<div class="tip-tiers">${tiers}</div>` : ""}
       ${extra}
     </div>`;
@@ -154,7 +157,7 @@
     pop = null;
     popFor = null;
   }
-  DL.closeSheet = () => { document.querySelector(".sheet-backdrop")?.remove(); document.querySelector(".formula-pop")?.remove(); };
+  DL.closeSheet = () => document.querySelector(".sheet-backdrop")?.remove();
   /** A bottom sheet with arbitrary content; `onOpen(sheetEl)` wires its controls. */
   DL.sheet = (content, onOpen) => {
     DL.closeSheet();
@@ -221,15 +224,18 @@
   });
   // ---- breakdown of a calculated value ----
   let formulaPop = null;
-  const closeFormula = () => { formulaPop?.remove(); formulaPop = null; };
+  const closeFormula = () => {
+    formulaPop?.source.classList.remove("open");
+    formulaPop?.remove();
+    formulaPop = null;
+  };
   function openFormula(el) {
-    const same = formulaPop?.source === el;
     closeFormula();
-    if (same) return;
     formulaPop = document.createElement("div");
     formulaPop.className = "formula-pop";
     formulaPop.innerHTML = formulaTip(JSON.parse(el.dataset.formula));
     formulaPop.source = el;
+    el.classList.add("open");
     document.body.appendChild(formulaPop);
     const r = el.getBoundingClientRect();
     const w = formulaPop.offsetWidth;
@@ -239,11 +245,22 @@
     formulaPop.style.left = `${x}px`;
     formulaPop.style.top = `${y}px`;
   }
+  // In the capture phase: with a breakdown open, a tap anywhere else only closes it. The tap
+  // goes no further, so on a phone it doesn't also close the sheet underneath or press a button.
   document.addEventListener("click", (e) => {
     const el = e.target.closest("[data-formula]");
+    if (formulaPop) {
+      const again = el === formulaPop.source;
+      const inside = e.target.closest(".formula-pop");
+      closeFormula();
+      if (!el || again || inside) {
+        e.stopPropagation();
+        e.preventDefault();
+        return;
+      }
+    }
     if (el) openFormula(el);
-    else if (!e.target.closest(".formula-pop")) closeFormula();
-  });
+  }, true);
   document.addEventListener("keydown", (e) => {
     const el = e.target.closest?.("[data-formula]");
     if (e.key === "Escape") closeFormula();

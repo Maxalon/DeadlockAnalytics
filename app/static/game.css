@@ -129,7 +129,9 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tip-sec.ability .tip-big.scaled.s-boon { border-color: var(--box-boon); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-boon)); }
 /* The breakdown of a calculated value, as the game's stat formula panel: base, what each stat
    adds (and where the stat comes from, indented), the total on a darker band. */
-[data-formula] { cursor: pointer; }
+[data-formula] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+[data-formula].open { outline: 1px solid var(--gold); outline-offset: 1px; }
+.tip-hint { display: none; margin: 0; padding: 0 12px 8px; font-size: .78rem; color: var(--muted); }
 [data-formula]:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
 .formula-pop { position: fixed; z-index: 70; }
 .formula { width: 210px; padding-top: 5px; border-radius: 3px; background: var(--f-bg); color: var(--f-text); font-size: .78rem; box-shadow: 0 8px 28px rgb(0 0 0 / .5); overflow: hidden;
@@ -252,6 +254,7 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .ed-ab .pips i { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--gold); }
 .ed-ab .pips i.on { background: var(--gold); }
 .ed-ab:disabled { opacity: .45; cursor: default; }
+.ed-ab-info { min-height: 32px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: none; color: var(--gold); font: inherit; font-size: .8rem; cursor: pointer; }
 .ed-ab .unl { font-size: .65rem; color: var(--muted); }
 .ed-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .ed-box h2 { margin: 0 0 8px; font-size: 1.05rem; }
@@ -300,4 +303,18 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
   .tile .tile-art { height: 64px; }
   .tile .tile-name { max-width: 64px; }
   .shop-tier { grid-template-columns: 40px 1fr; }
+}
+
+/* ---- Touch screens and phones: values are tapped, not hovered ---- */
+@media (pointer: coarse), (max-width: 700px) {
+  .tip-hint { display: block; }
+  .tip-lines { gap: 0; }
+  .tip-lines .tip-line { min-height: 40px; }
+  .tip-big { min-height: 64px; }
+  .sc span { font-size: .7rem; }
+  .tip-sec.ability .tip-big .sc span { font-size: .74rem; }
+  .formula { width: min(290px, calc(100vw - 24px)); font-size: .92rem; }
+  .formula > div { padding: 4px 13px; }
+  .formula .f-total { padding: 7px 16px 9px; }
+  .ed-ab-info { min-height: 44px; font-size: .85rem; }
 }

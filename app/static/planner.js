@@ -227,7 +227,7 @@
       return `<div style="display:grid;gap:4px"><button type="button" class="ed-ab" data-ab="${a.id}" ${done ? "disabled" : ""}>
           <img src="${esc(a.image)}" alt="" data-ability="${h.id}:${a.id}"><span>${esc(a.name)}</span>
           <span class="pips">${[0, 1, 2].map((i) => `<i class="${i < t ? "on" : ""}"></i>`).join("")}</span><span class="unl">${next}</span></button>
-          <a href="#" class="small" data-info="${a.id}" style="text-align:center">Details</a></div>`;
+          <button type="button" class="ed-ab-info" data-info="${a.id}" aria-label="${esc(a.name)} details">Details</button></div>`;
     }).join("");
     const byId = new Map(h.abilities.map((a) => [a.id, a]));
     const seen = new Map();
@@ -244,7 +244,6 @@
   $("ed-abilities").addEventListener("click", (e) => {
     const info = e.target.closest("[data-info]");
     if (info) {
-      e.preventDefault();
       DL.sheet(DL.abilityTip(DL.abilities.get(Number(info.dataset.info))));
       return;
     }
