@@ -103,20 +103,48 @@ async function open(t, url = "/items", options = PHONE) {
   return h;
 }
 
-test("opens as a named modal with a 44px close button", async (t) => {
+test("opens as a named modal on the bottom edge", async (t) => {
   const h = await open(t);
   const s = await h.show(SHORT);
   assert.equal(s.label, "Short");
   const info = await h.page.evaluate(() => {
     const d = document.querySelector(".sheet-dialog");
-    const r = d.querySelector(".sheet-close").getBoundingClientRect();
-    return { modal: d.matches(":modal"), focus: document.activeElement.className, w: r.width, h: r.height, bottom: Math.round(d.querySelector(".sheet").getBoundingClientRect().bottom) };
+    return { modal: d.matches(":modal"), bottom: Math.round(d.querySelector(".sheet").getBoundingClientRect().bottom) };
   });
   assert.equal(info.modal, true);
-  assert.equal(info.focus, "sheet-close");
-  assert.ok(info.w >= 44 && info.h >= 44, "close button is a 44px target");
   assert.ok(Math.abs(info.bottom - 780) <= 1, "the sheet sits on the bottom edge");
   assert.deepEqual(h.errors, []);
+});
+
+test("on a touch screen the grip shows and no close button; a keyboard gets the button", async (t) => {
+  const h = await open(t);
+  const button = () => h.page.evaluate(() => {
+    const b = document.querySelector(".sheet-close");
+    const r = b.getBoundingClientRect();
+    return {
+      shown: getComputedStyle(b).opacity === "1",
+      hit: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest(".sheet-close") === b,
+      grip: getComputedStyle(document.querySelector(".sheet-grip")).display !== "none",
+      focused: document.activeElement === b,
+      size: [r.width, r.height],
+    };
+  });
+  const tile = h.page.locator("main [data-item]").first();
+  await tile.tap();
+  await h.opened();
+  let b = await button();
+  assert.deepEqual([b.shown, b.hit, b.grip], [false, false, true]);
+  await h.page.touchscreen.tap(195, 100);
+  await h.closed();
+  // Opened from the keyboard: the button is there, focused, and closes the sheet.
+  await tile.focus();
+  await h.page.keyboard.press("Enter");
+  await h.opened();
+  b = await button();
+  assert.deepEqual([b.shown, b.hit, b.focused], [true, true, true]);
+  assert.ok(b.size[0] >= 44 && b.size[1] >= 44, "a 44px target");
+  await h.page.keyboard.press("Enter");
+  await h.closed();
 });
 
 test("a swipe down on the bar closes it, and focus returns to what opened it", async (t) => {
@@ -169,13 +197,10 @@ test("the bar drags the sheet wherever its content is scrolled to", async (t) =>
   await h.closed();
 });
 
-test("a tap outside, the close button and Esc each close it", async (t) => {
+test("a tap outside and Esc each close it", async (t) => {
   const h = await open(t);
   await h.show(SHORT);
   await h.page.touchscreen.tap(195, 100);
-  await h.closed();
-  await h.show(SHORT);
-  await h.page.locator(".sheet-close").tap();
   await h.closed();
   await h.show(SHORT);
   await h.page.keyboard.press("Escape");
@@ -251,7 +276,7 @@ test("an error while wiring the content still leaves a sheet that shows and clos
     try { Sheet.open(x, { onOpen() { throw new Error("boom"); } }); } catch { /* the caller's own error */ }
   }, SHORT);
   await h.opened();
-  await h.page.locator(".sheet-close").tap();
+  await h.page.touchscreen.tap(195, 100);
   await h.closed();
 });
 
@@ -323,22 +348,32 @@ test("nothing scrolls sideways at 360px", async (t) => {
   await h.opened();
   const fits = () => h.page.evaluate(() => [document.documentElement, document.querySelector(".sheet-scroller"), document.querySelector(".sheet-content")].every((e) => e.scrollWidth <= e.clientWidth + 1));
   assert.equal(await fits(), true);
-  await h.page.locator(".sheet-close").tap();
+  await h.page.keyboard.press("Escape");
   await h.closed();
   await h.page.locator("#ed-export").tap();
   await h.opened();
   assert.equal(await fits(), true);
 });
 
-test("with a mouse: no grip, the wheel never moves the sheet, a click outside closes", async (t) => {
+test("with a mouse: a close button instead of the grip, the wheel never moves the sheet, a click outside closes", async (t) => {
   const h = await open(t, "/items", DESKTOP);
-  await h.page.locator("main [data-item]").first().click();
+  const tile = h.page.locator("main [data-item]").first();
+  await tile.click();
   await h.opened();
-  assert.equal(await h.page.evaluate(() => getComputedStyle(document.querySelector(".sheet-grip")).display), "none");
+  const look = await h.page.evaluate(() => {
+    const b = document.querySelector(".sheet-close");
+    const r = b.getBoundingClientRect();
+    return { grip: getComputedStyle(document.querySelector(".sheet-grip")).display, button: getComputedStyle(b).opacity, size: [r.width, r.height] };
+  });
+  assert.deepEqual(look, { grip: "none", button: "1", size: [44, 44] });
   await h.page.mouse.move(640, 700);
   await h.page.mouse.wheel(0, -600);
   await h.page.mouse.wheel(0, 600);
   await h.stillOpen();
+  await h.page.locator(".sheet-close").click();
+  await h.closed();
+  await tile.click();
+  await h.opened();
   await h.page.mouse.click(200, 200);
   await h.closed();
 });

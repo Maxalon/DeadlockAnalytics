@@ -12,7 +12,9 @@
 // the sheet ("closed") and the sheet itself ("open"). A finger on the bar, or on the content
 // once that is scrolled to its top, drags the sheet; it settles on one of the stops, and
 // reaching "closed" closes the dialog. After Chrome's Modern Web Guidance, "Navigation Drawer",
-// turned upright.
+// turned upright. On a touch screen the grip stands for all that and the close button is out of
+// sight (it stays for screen readers and keyboards); with a mouse, which can't swipe, it is the
+// other way round.
 //
 // Something shown on top of the sheet (a popover inside the dialog) keeps Esc and the back
 // gesture for itself by preventing the dialog's `cancel` event in the capture phase.

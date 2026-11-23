@@ -187,6 +187,11 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .sheet-close svg { position: relative; }
 .sheet-close:hover::before, .sheet-close:active::before { border-color: var(--muted); }
 .sheet-close:focus-visible { outline: 2px solid var(--gold); outline-offset: -4px; }
+/* Touch: the grip, a tap outside and the back gesture close it, so no button in sight. It stays
+   for screen readers, and shows when a keyboard reaches it. */
+@media not all and (hover: hover) and (pointer: fine) {
+  .sheet-close:not(:focus-visible) { opacity: 0; pointer-events: none; }
+}
 .sheet-content { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 0 env(safe-area-inset-bottom); }
 .sheet-content > .tip:first-child { margin-top: -10px; }
 .sheet .tip { width: 100%; border: 0; border-radius: 0; box-shadow: none; }
@@ -201,7 +206,7 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
   .sheet-dialog::before { animation: sheet-dim linear both; animation-timeline: --sheet; }
   @keyframes sheet-dim { from { opacity: 0; } to { opacity: .55; } }
 }
-/* A mouse doesn't swipe: no grip to suggest it, and the wheel scrolls the content, never the sheet. */
+/* A mouse doesn't swipe: the close button instead of the grip, and the wheel scrolls the content, never the sheet. */
 @media (hover: hover) and (pointer: fine) {
   .sheet-scroller { overflow: hidden; }
   .sheet-grip { display: none; }
