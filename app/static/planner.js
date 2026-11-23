@@ -140,8 +140,7 @@
     const options = imbueOptions(it);
     let imbue = imbueTarget(m)?.id ?? null;
     const imbueField = !it.imbue ? "" : `<label id="ed-imbue-label">Imbue Target</label>${hero()
-      ? `<div class="imbue-pick" role="group" aria-labelledby="ed-imbue-label">${hero().abilities.map((a) => `<button type="button" class="imbue-opt${a.id === imbue ? " on" : ""}" data-imbue="${a.id}" aria-pressed="${a.id === imbue}" ${options.includes(a) ? "" : 'disabled title="Cannot be imbued"'}><img src="${esc(a.image)}" alt=""><span>${esc(a.name)}</span></button>`).join("")}</div>
-        <p class="muted small imbue-help">This hero ability will show up as the suggested imbue target for this item in the purchase dialog, or if this item is purchased via Quickbuy, this will automatically be chosen as the imbue target.</p>`
+      ? `<div class="imbue-pick" role="group" aria-labelledby="ed-imbue-label"><button type="button" class="imbue-opt${imbue === null ? " on" : ""}" data-imbue="0" aria-pressed="${imbue === null}"><i class="imbue-none"></i><span>None</span></button>${hero().abilities.map((a) => `<button type="button" class="imbue-opt${a.id === imbue ? " on" : ""}" data-imbue="${a.id}" aria-pressed="${a.id === imbue}" ${options.includes(a) ? "" : 'disabled title="Cannot be imbued"'}><img src="${esc(a.image)}" alt=""><span>${esc(a.name)}</span></button>`).join("")}</div>`
       : '<p class="muted small imbue-help">Pick a hero to choose the ability this item should imbue.</p>'}`;
     const form = `<div class="sheet-form">
         ${imbueField}
@@ -168,11 +167,12 @@
       sheet.addEventListener("click", (e) => {
         const opt = e.target.closest("[data-imbue]");
         if (opt) {
-          // A second tap on the chosen ability clears it.
-          const id = Number(opt.dataset.imbue);
+          // "None" (0) leaves the choice to the player in game; so does a second tap on the
+          // chosen ability.
+          const id = Number(opt.dataset.imbue) || null;
           imbue = imbue === id ? null : id;
           for (const b of sheet.querySelectorAll("[data-imbue]")) {
-            const on = Number(b.dataset.imbue) === imbue;
+            const on = (Number(b.dataset.imbue) || null) === imbue;
             b.classList.toggle("on", on);
             b.setAttribute("aria-pressed", on);
           }

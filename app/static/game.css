@@ -235,9 +235,10 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .cat-imbue img { width: 18px; height: 18px; flex: none; border-radius: 4px; background: #222; padding: 2px; }
 .cat-imbue span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cat-imbue[data-ability] { cursor: pointer; }
-.imbue-pick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.imbue-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.imbue-none { width: 40px; height: 40px; border: 1px dashed var(--muted); border-radius: 8px; opacity: .6; }
 .imbue-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 76px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text);
-  font: inherit; font-size: .7rem; line-height: 1.15; text-align: center; cursor: pointer; }
+  font: inherit; font-size: .7rem; line-height: 1.15; text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .imbue-opt img { width: 40px; height: 40px; border-radius: 8px; background: #222; padding: 4px; }
 .imbue-opt.on { border-color: var(--spirit); box-shadow: 0 0 0 1px var(--spirit); background: var(--spirit-dark); }
 .imbue-opt:disabled { opacity: .35; cursor: default; }
@@ -333,7 +334,7 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
   .tip-hint { display: block; }
   .tip-lines { gap: 0; }
   .tip-lines .tip-line { min-height: 40px; }
-  .tip-big { min-height: 64px; padding-top: 14px; }  /* narrow boxes: the value clears x0.61 */
+  .tip-big { min-height: 64px; padding-top: 20px; }  /* narrow boxes: the value clears x0.61 */
   .cat-imbue[data-ability] { min-height: 40px; }
   .sc span { font-size: .7rem; }
   .tip-sec.ability .tip-big .sc span { font-size: .74rem; }
