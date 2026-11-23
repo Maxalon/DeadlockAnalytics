@@ -98,7 +98,7 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tip-big > span:not(.sc) { font-size: .72rem; color: var(--muted); line-height: 1.15; }
 /* A value as the game sets it: icon, the base value struck through when a build changed it, the
    current value, units smaller. Sizes are the game's (26px value in a 500px tooltip) at this width. */
-.tip-val { display: inline-flex; align-items: baseline; justify-content: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.tip-val { display: inline-flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 0 4px; font-variant-numeric: tabular-nums; }
 .tip-val img { align-self: center; flex: none; }
 .tip-val b small { font-weight: 600; }
 .tip-val s { color: var(--struck); font-weight: 600; }

@@ -29,13 +29,13 @@ _SVG = re.compile(r"<svg\b.*?</svg>\s*", re.I | re.S)
 # Panorama layout tags around inline icons: dropped, their content kept.
 _PANEL = re.compile(r"</?Panel\b[^>]*>", re.I)
 # Inline stat icons: kept only when they come from deadlock-api's asset host.
-# How the game's tooltips round. Its data carries a display type per property that sets the
-# decimals (and rare per-property overrides); deadlock-api passes on neither. Its schema says
-# the decimals are a maximum, and what players report from the game fits one decimal for values
-# (a 6.36m radius reads 6.4m) and two for scaling multipliers (0.525 reads x0.53). Stats an item
-# gives the hero are typed (sprint speed 0.75 m/s, regen) and keep two.
-VALUE_DECIMALS = 1
-STAT_DECIMALS = 2
+# How tooltips print numbers. The game sets the decimals by a display type per property (and
+# rare per-property overrides) in its code; deadlock-api passes on neither, so its rule can't be
+# copied. A value keeps the decimals the data has, up to two: exact for everything but the data's
+# artifacts (13.3333 reads 13.33, 10.0 reads 10). Scaling multipliers take two (0.525 reads
+# x0.53), three below 0.01. A value worked out for a build is as precise as the one it was worked
+# out from, with at least one decimal: in the game a 6m radius with +6% reads 6.4m.
+VALUE_DECIMALS = 2
 UNITS_PER_METER = 39.37
 _UNIT = re.compile(r"^(-?\d+(?:\.\d+)?|-?\.\d+)\s*(m|s)$")
 # The game's scale functions that add `stat_scale` per point of one stat, and which stat that is:
@@ -141,8 +141,9 @@ def _fmt(value: float, sign: str, postfix: str, places: int = VALUE_DECIMALS) ->
     return f"{lead}{_round(value, places)}{postfix or ''}"
 
 
-def _decimals(p: dict) -> int:
-    return STAT_DECIMALS if p.get("provided_property_type") else VALUE_DECIMALS
+def _calc_decimals(value: float) -> int:
+    """The decimals for a value worked out from `value`: as many as it shows, at least one."""
+    return max(1, len(_round(value, VALUE_DECIMALS).partition(".")[2]))
 
 
 def _parse(raw) -> tuple[float | None, str]:
@@ -211,7 +212,7 @@ def item_stats(props: dict) -> list[dict]:
                 # As a number to sum: what the game shows with a minus counts as one.
                 "value": -v if sign == "-" and v > 0 else v,
                 "postfix": postfix,
-                "text": _fmt(v, sign, postfix, _decimals(p)),
+                "text": _fmt(v, sign, postfix),
                 # Summable into build totals: a stat the item gives the hero, always on.
                 "stat": p.get("provided_property_type"),
                 "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -249,7 +250,7 @@ def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
     out = {
         "key": key,
         "label": p.get("label") or p.get("postvalue_label") or stat_label(key),
-        "value": _fmt(v, sign, postfix, _decimals(p)),
+        "value": _fmt(v, sign, postfix),
         "icon": icon or p.get("icon"),
         "css": p.get("css_class") or "",
         "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -259,7 +260,7 @@ def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
         out["scale"] = scale
     if scale or mods:
         # The number itself, so the editor can show the value with a build's stats applied.
-        out["calc"] = {"base": v, "sign": sign, "postfix": postfix, "mods": mods, "dp": _decimals(p)}
+        out["calc"] = {"base": v, "sign": sign, "postfix": postfix, "mods": mods, "dp": _calc_decimals(v)}
     return out
 
 

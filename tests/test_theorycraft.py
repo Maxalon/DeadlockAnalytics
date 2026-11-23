@@ -492,20 +492,29 @@ def test_scaling_and_distances():
     )
 
 
-def test_numbers_as_the_game_prints_them():
-    # At most one decimal, half up, no trailing zeros; multipliers to two, the very small to three.
-    assert [gamedata._round(v, 1) for v in (13.3333, 6.36, 6.48, 2.75, 40.0, -10.0)] == [
-        "13.3",
-        "6.4",
-        "6.5",
-        "2.8",
+def test_numbers_keep_the_decimals_of_the_data():
+    # Up to two decimals, half up, no trailing zeros: exact but for the data's artifacts.
+    # Multipliers to two, the very small to three.
+    assert [gamedata._round(v, 2) for v in (13.3333, 0.01, 0.15, 0.75, 1.04, 2.75, 40.0, -10.0)] == [
+        "13.33",
+        "0.01",
+        "0.15",
+        "0.75",
+        "1.04",
+        "2.75",
         "40",
         "-10",
     ]
     assert [gamedata._coef(v) for v in (0.609336, 0.525, 0.015, 2.2, 0.002)] == ["0.61", "0.53", "0.02", "2.2", "0.002"]
     props = {
         "DPS": {"value": "13.3333", "label": "Damage Per Second"},
-        # A stat the item gives the hero is typed in the game's data and keeps two decimals.
+        "Stun": {
+            "value": "0.75",
+            "label": "Stun Duration",
+            "postfix": "s",
+            "scale_function": {"class_name": "scale_function_tech_duration"},
+        },
+        "Radius": {"value": "6m", "label": "Radius", "scale_function": {"class_name": "scale_function_tech_range"}},
         "Sprint": {
             "value": "0.75",
             "label": "Sprint Speed",
@@ -516,12 +525,16 @@ def test_numbers_as_the_game_prints_them():
         # A distance without "m" is in engine units.
         "Range": {"value": "472.441", "label": "Cast Range", "postfix": "m", "display_units": "EDisplayUnit_Meters"},
     }
-    assert gamedata.prop(props, "DPS")["value"] == "13.3"
+    assert gamedata.prop(props, "DPS")["value"] == "13.33"
     assert gamedata.prop(props, "Sprint")["value"] == "+0.75m/s"
+    # With a build applied, a value is as precise as its base, with at least one decimal
+    # (in the game a 6m radius with +6% reads 6.4m).
+    assert gamedata.prop(props, "Stun")["value"] == "0.75s" and gamedata.prop(props, "Stun")["calc"]["dp"] == 2
+    assert gamedata.prop(props, "Radius")["value"] == "6m" and gamedata.prop(props, "Radius")["calc"]["dp"] == 1
     assert gamedata.prop(props, "Range")["value"] == "12m"
     # Prose keeps the numbers Valve wrote, without the data's artifacts.
     text = gamedata.clean_html('<span class="highlight">+13.3333</span> DPS, -10.0% for 6.0s, 0.25s, 49.5')
-    assert text == '<span class="highlight">+13.3</span> DPS, -10% for 6s, 0.25s, 49.5'
+    assert text == '<span class="highlight">+13.33</span> DPS, -10% for 6s, 0.25s, 49.5'
 
 
 def test_imbue_targets_and_item_tiles(tmp_path):
