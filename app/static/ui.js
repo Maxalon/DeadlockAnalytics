@@ -1,5 +1,5 @@
 // Shared UI for the item, hero, build and editor pages: game data, item tiles, Deadlock-style
-// tooltips (a popover on desktop, a bottom sheet on phones) and the shop.
+// tooltips (a popover on desktop, a bottom sheet on phones) and the shop. Needs sheet.js.
 // Any element with data-item="<id>" or data-ability="<heroId>:<abilityId>" opens its tooltip.
 (() => {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -162,21 +162,14 @@
     pop = null;
     popFor = null;
   }
-  DL.closeSheet = () => document.querySelector(".sheet-backdrop")?.remove();
-  /** A bottom sheet with arbitrary content; `onOpen(sheetEl)` wires its controls. */
+  /** A bottom sheet (sheet.js) with arbitrary content; `onOpen(contentEl)` wires its controls.
+   *  Returns the element holding the content. Whatever tooltip is showing gives way to it. */
   DL.sheet = (content, onOpen) => {
-    DL.closeSheet();
     closePop();
-    const back = document.createElement("div");
-    back.className = "sheet-backdrop";
-    back.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><div class="sheet-grip"></div><button type="button" class="sheet-close" aria-label="Close">✕</button>${content}</div>`;
-    back.addEventListener("click", (e) => {
-      if (e.target === back || e.target.closest(".sheet-close")) DL.closeSheet();
-    });
-    document.body.appendChild(back);
-    onOpen?.(back.querySelector(".sheet"));
-    return back.querySelector(".sheet");
+    closeFormula();
+    return Sheet.open(content, { onOpen });
   };
+  DL.closeSheet = () => Sheet.close();
   function tipFor(el) {
     if (el.dataset.item) {
       const it = DL.items.get(Number(el.dataset.item));
@@ -222,10 +215,7 @@
   });
   document.addEventListener("scroll", closePop, { passive: true });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closePop();
-      DL.closeSheet();
-    }
+    if (e.key === "Escape") closePop();
   });
   // ---- long press ----
   const HOLD_MS = 450;
@@ -301,7 +291,7 @@
     formulaPop.innerHTML = formulaTip(JSON.parse(el.dataset.formula));
     formulaPop.source = el;
     el.classList.add("open");
-    document.body.appendChild(formulaPop);
+    (el.closest("dialog") || document.body).appendChild(formulaPop);
     const r = el.getBoundingClientRect();
     const w = formulaPop.offsetWidth;
     const h = formulaPop.offsetHeight;
@@ -328,9 +318,17 @@
   }, true);
   document.addEventListener("keydown", (e) => {
     const el = e.target.closest?.("[data-formula]");
-    if (e.key === "Escape") closeFormula();
-    else if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFormula(el); }
+    if (e.key === "Escape" && formulaPop) {
+      closeFormula();
+      e.preventDefault();  // only the breakdown: the sheet under it stays
+    } else if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFormula(el); }
   });
+  // The back gesture on a sheet with a breakdown open: only the breakdown (see sheet.js).
+  document.addEventListener("cancel", (e) => {
+    if (!formulaPop || !e.cancelable) return;
+    closeFormula();
+    e.preventDefault();
+  }, true);
   document.addEventListener("scroll", closeFormula, { passive: true, capture: true });
 
   // Pages without their own click handling: a tap opens the tooltip.
