@@ -232,7 +232,10 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
         if not hero:
             raise HTTPException(400, "unknown hero")
         details = builds.clean_details(
-            payload.get("details") or {}, set(data["items_by_id"]), {a["id"] for a in hero["abilities"]}
+            payload.get("details") or {},
+            set(data["items_by_id"]),
+            {a["id"] for a in hero["abilities"]},
+            builds.imbue_targets(data["items"], hero["abilities"]),
         )
         name = str(payload.get("name") or "").strip()[: builds.MAX_NAME] or f"{hero['name']} build"
         description = str(payload.get("description") or "").strip()[: builds.MAX_DESCRIPTION]
@@ -405,6 +408,7 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
             categories=builds.categories(details),
             steps=builds.ability_steps(details, hero["abilities"]) if hero else [],
             by_id=data["items_by_id"] if data else {},
+            abilities={a["id"]: a for a in hero["abilities"]} if hero else {},
             accounts=accounts_by_id(),
         )
 

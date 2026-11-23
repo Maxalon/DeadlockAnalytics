@@ -12,6 +12,7 @@ import json
 import re
 import sqlite3
 import threading
+from decimal import ROUND_HALF_UP, Decimal
 
 SLOTS = ("weapon", "vitality", "spirit")
 # What the souls spent in each shop category buy, per deadlock-api's `cost_bonuses`.
@@ -20,7 +21,6 @@ INVESTMENT = {
     "vitality": ("Base health", "%"),
     "spirit": ("Spirit power", ""),
 }
-_ZERO = {"", "0", "0.0", "-1", "-1.0"}
 # Valve's tooltip markup: keep these tags (without attributes but `class`), escape the rest.
 _TAG = re.compile(r"<(/?)(span|br|b|i|strong|em|p)\b([^>]*)>", re.I)
 _CLASS = re.compile(r"""class\s*=\s*["']([\w\s-]*)["']""")
@@ -29,9 +29,55 @@ _SVG = re.compile(r"<svg\b.*?</svg>\s*", re.I | re.S)
 # Panorama layout tags around inline icons: dropped, their content kept.
 _PANEL = re.compile(r"</?Panel\b[^>]*>", re.I)
 # Inline stat icons: kept only when they come from deadlock-api's asset host.
+# How tooltips print numbers. The game sets the decimals by a display type per property (and
+# rare per-property overrides) in its code; deadlock-api passes on neither, so its rule can't be
+# copied. A value keeps the decimals the data has, up to two: exact for everything but the data's
+# artifacts (13.3333 reads 13.33, 10.0 reads 10). Scaling multipliers take two (0.525 reads
+# x0.53), three below 0.01. A value worked out for a build is as precise as the one it was worked
+# out from, with at least one decimal: in the game a 6m radius with +6% reads 6.4m.
+VALUE_DECIMALS = 2
+UNITS_PER_METER = 39.37
+_UNIT = re.compile(r"^(-?\d+(?:\.\d+)?|-?\.\d+)\s*(m|s)$")
+# The game's scale functions that add `stat_scale` per point of one stat, and which stat that is:
+# named by the function's stat type, else implied by its class. (Other types only say which of
+# range, duration or cooldown bonuses apply to the value.)
+_SCALE_STATS = {
+    "ETechPower": "spirit",
+    "ELevelUpBoons": "boon",
+    "ELightMeleeDamage": "melee",
+    "EHeavyMeleeDamage": "melee",
+    "EBaseWeaponDamageIncrease": "weapon",
+    "EWeaponDamageScale": "weapon",
+}
+_SCALE_CLASSES = {
+    "scale_function_tech_damage": "spirit",
+    "scale_function_healing_spirit_scale": "spirit",
+    "scale_function_healing_boon_scale": "boon",
+}
+_SCALE_FUNCTIONS = {
+    *_SCALE_CLASSES,
+    "scale_function_single_stat",
+    "scale_function_multi_stats",
+    "scale_function_ability_weapon_damage",
+}
+# The stat types a build's percentage bonuses apply to, and the classes that imply one.
+_BUILD_MODS = {"ETechDuration": "duration", "ETechRange": "range", "ETechRadius": "radius"}
+_MOD_CLASSES = {
+    "scale_function_tech_duration": "duration",
+    "scale_function_tech_range": "range",
+    "scale_function_tech_range_rounded": "range",
+}
 _IMG = re.compile(
     r"""<img\b[^>]*?\bsrc\s*=\s*["'](https://assets-bucket\.deadlock-api\.com/[\w./-]+)["'][^>]*>""", re.I
 )
+
+
+_LONG_NUMBER = re.compile(r"(?<![\w.])\d+\.(?:\d{3,}|0+)(?![\w.]*\d)")
+
+
+def _prose(text: str) -> str:
+    """Escaped text, its numbers without the data's artifacts: 13.3333 -> 13.3, 10.0 -> 10."""
+    return html.escape(_LONG_NUMBER.sub(lambda m: _round(float(m.group()), VALUE_DECIMALS), text), quote=False)
 
 
 def clean_html(text: str | None) -> str:
@@ -45,16 +91,16 @@ def clean_html(text: str | None) -> str:
     out, pos = [], 0
     for m in re.finditer(f"{_TAG.pattern}|{_IMG.pattern}", text, re.I):
         if m.group(4):  # an inline icon
-            out.append(html.escape(text[pos : m.start()], quote=False))
+            out.append(_prose(text[pos : m.start()]))
             out.append(f'<img class="inline-icon" src="{html.escape(m.group(4))}" alt="">')
             pos = m.end()
             continue
-        out.append(html.escape(text[pos : m.start()], quote=False))
+        out.append(_prose(text[pos : m.start()]))
         close, tag, attrs = m.group(1), m.group(2).lower(), m.group(3)
         cls = _CLASS.search(attrs) if not close else None
         out.append(f"<{close}{tag}{f' class="{cls.group(1)}"' if cls else ''}>")
         pos = m.end()
-    out.append(html.escape(text[pos:], quote=False))
+    out.append(_prose(text[pos:]))
     return "".join(out)
 
 
@@ -71,9 +117,83 @@ def _num(value) -> float | None:
         return None
 
 
-def _fmt(value: float, signed: bool, postfix: str) -> str:
-    text = f"{value:+g}" if signed else f"{value:g}"
-    return f"{text}{postfix or ''}"
+def _round(value: float, places: int) -> str:
+    """A number as the game's tooltips print it: to at most `places` decimals, half up, without
+    trailing zeros (13.3333 -> 13.3, 0.525 -> 0.53)."""
+    d = Decimal(repr(float(value))).quantize(Decimal(1).scaleb(-places), ROUND_HALF_UP)
+    text = f"{d:f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
+
+
+def _sign(p: dict) -> str:
+    """How the game prefixes a property's number: "sign" by its sign (+12, -3), a literal "+" or
+    "-" (a slow is written 40 and shown -40%), or "" for none."""
+    prefix = (p.get("prefix") or "").strip()
+    if "{s:sign}" in prefix:
+        return "sign"
+    return prefix if prefix in ("+", "-") else ""
+
+
+def _fmt(value: float, sign: str, postfix: str, places: int = VALUE_DECIMALS) -> str:
+    lead = ("+" if sign == "sign" else sign) if value > 0 else ""
+    return f"{lead}{_round(value, places)}{postfix or ''}"
+
+
+def _calc_decimals(value: float) -> int:
+    """The decimals for a value worked out from `value`: as many as it shows, at least one."""
+    return max(1, len(_round(value, VALUE_DECIMALS).partition(".")[2]))
+
+
+def _parse(raw) -> tuple[float | None, str]:
+    """A number and the unit written into it: distances come as "14m"."""
+    raw = str(raw if raw is not None else "").strip()
+    m = _UNIT.match(raw)
+    return (_num(m.group(1)), m.group(2)) if m else (_num(raw), "")
+
+
+def _value(p: dict) -> tuple[float | None, str]:
+    """A property's number and unit; None when it is unset (0, or the game's -1)."""
+    v, unit = _parse(p.get("value"))
+    if v in (None, 0, -1):
+        return None, p.get("postfix") or unit
+    if not unit and p.get("display_units") == "EDisplayUnit_Meters":
+        v /= UNITS_PER_METER  # a distance without "m" is in the engine's units
+    return v, p.get("postfix") or unit
+
+
+def scaling(p: dict) -> dict | None:
+    """What a property grows with, as the game's arrow and `x0.61` on a value: each point of
+    the stat (spirit power, boons, ...) adds `per` to it."""
+    sf = p.get("scale_function") or {}
+    per = _num(sf.get("stat_scale"))
+    kind = sf.get("specific_stat_scale_type")
+    stat = _SCALE_STATS.get(kind) if kind else _SCALE_CLASSES.get(sf.get("class_name"))
+    if not per or not stat or sf.get("class_name") not in _SCALE_FUNCTIONS:
+        return None
+    return {"stat": stat, "per": per, "text": _coef(per)}
+
+
+def _coef(per: float) -> str:
+    """A scaling multiplier as the game prints it: two decimals, three for the very small."""
+    return _round(per, 2 if abs(per) >= 0.01 else 3)
+
+
+def build_mods(p: dict) -> dict:
+    """Which of a build's percentage bonuses (ability duration, range, radius) a property grows
+    with, and how strongly (1 = the full bonus)."""
+    sf = p.get("scale_function") or {}
+    kind = sf.get("specific_stat_scale_type")
+    mods = {_BUILD_MODS[t]: 1.0 for t in [kind, *(sf.get("scaling_stats") or [])] if t in _BUILD_MODS}
+    implied = _MOD_CLASSES.get(sf.get("class_name"))
+    if implied and not kind:
+        mods.setdefault(implied, 1.0)
+    # A factor on a function of only that bonus is its strength.
+    own = _BUILD_MODS.get(kind) or (implied if not kind else None)
+    if own and _num(sf.get("stat_scale")):
+        mods[own] = _num(sf.get("stat_scale"))
+    return mods
 
 
 def item_stats(props: dict) -> list[dict]:
@@ -81,18 +201,18 @@ def item_stats(props: dict) -> list[dict]:
     out = []
     for key, p in (props or {}).items():
         label = p.get("label")
-        value = str(p.get("value", "")).strip()
-        if not label or value in _ZERO or _num(value) is None:
+        v, postfix = _value(p)
+        if not label or v is None:
             continue
-        v = _num(value)
-        signed = "{s:sign}" in (p.get("prefix") or "") or bool(p.get("provided_property_type"))
+        sign = _sign(p)
         out.append(
             {
                 "key": key,
                 "label": label,
-                "value": v,
-                "postfix": p.get("postfix") or "",
-                "text": _fmt(v, signed, p.get("postfix") or ""),
+                # As a number to sum: what the game shows with a minus counts as one.
+                "value": -v if sign == "-" and v > 0 else v,
+                "postfix": postfix,
+                "text": _fmt(v, sign, postfix),
                 # Summable into build totals: a stat the item gives the hero, always on.
                 "stat": p.get("provided_property_type"),
                 "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
@@ -116,23 +236,32 @@ def _description(raw: dict) -> dict:
 
 
 def prop(props: dict, key: str, icon: str | None = None) -> dict | None:
-    """One property as the game shows it: `+12% Fire Rate`, with its icon; None if it is zero or unknown."""
+    """One property as the game shows it: `+12% Fire Rate`, with its icon and what it scales
+    with; None if it is unknown, or zero without scaling."""
     p = (props or {}).get(key)
     if not p:
         return None
-    value = str(p.get("value", "")).strip()
-    v = _num(value)
-    if v is None or value in _ZERO:
+    v, postfix = _value(p)
+    scale = scaling(p)
+    if v is None and not (scale and _parse(p.get("value"))[0] == 0):
         return None
-    signed = "{s:sign}" in (p.get("prefix") or "") or bool(p.get("provided_property_type"))
-    return {
+    v = v or 0.0
+    sign = _sign(p)
+    out = {
         "key": key,
         "label": p.get("label") or p.get("postvalue_label") or stat_label(key),
-        "value": _fmt(v, signed, p.get("postfix") or ""),
+        "value": _fmt(v, sign, postfix),
         "icon": icon or p.get("icon"),
         "css": p.get("css_class") or "",
         "conditional": "ConditionallyApplied" in (p.get("usage_flags") or []),
     }
+    mods = build_mods(p)
+    if scale:
+        out["scale"] = scale
+    if scale or mods:
+        # The number itself, so the editor can show the value with a build's stats applied.
+        out["calc"] = {"base": v, "sign": sign, "postfix": postfix, "mods": mods, "dp": _calc_decimals(v)}
+    return out
 
 
 _HEADER_PROPS = ("AbilityCooldown", "AbilityCharges")
@@ -144,6 +273,8 @@ def _header(props: dict) -> dict:
         p = prop(props, key)
         if p:
             out[name] = p["value"]
+            if name == "duration" and p.get("calc"):
+                out["duration_calc"] = p["calc"]
     return out
 
 
@@ -167,11 +298,13 @@ def item_tooltip(raw: dict) -> list[dict]:
                 if kind != "innate" and key in _HEADER_PROPS + ("AbilityDuration",):
                     continue
                 lines.append(prop(props, key))
+        big = [b for b in big if b]
+        shown = {b["key"] for b in big}  # a section can list a property as a box and a line
         section = {
             "type": kind,
             "text": "<br>".join(text),
-            "big": [b for b in big if b],
-            "lines": [x for x in lines if x],
+            "big": big,
+            "lines": [x for x in lines if x and x["key"] not in shown],
         }
         if kind == "active" or (kind == "passive" and not raw.get("is_active_item")):
             section.update(_header(props))
@@ -219,6 +352,9 @@ def shop_items(items_raw: list[dict]) -> list[dict]:
                 "tier": i.get("item_tier") or 0,
                 "cost": i.get("cost") or 0,
                 "active": bool(i.get("is_active_item")),
+                # Imbue items are bought onto one of the hero's abilities: "imbue_active",
+                # "imbue_modifier_value" or "imbue_active_non_ult" (not the ultimate), else "".
+                "imbue": i.get("imbue") or "",
                 "image": i.get("shop_image_webp") or i.get("shop_image") or i.get("image_webp") or i.get("image"),
                 "desc": d["desc"] or d["active"] or d["passive"],
                 "stats": item_stats(i.get("properties")),
@@ -245,11 +381,22 @@ def _ability(raw: dict | None) -> dict | None:
         bonuses = []
         for pu in up.get("property_upgrades") or []:
             p = (raw.get("properties") or {}).get(pu.get("name"), {})
-            v = _num(pu.get("bonus"))
-            if v is not None:
-                label = p.get("label") or stat_label(pu.get("name", ""))
-                bonuses.append(f"{label} {_fmt(v, True, p.get('postfix') or '')}")
-        upgrades.append({"text": d["tiers"][n] if n < 3 else "", "bonuses": bonuses})
+            v, unit = _parse(pu.get("bonus"))
+            if not v:
+                continue
+            label = p.get("label") or stat_label(pu.get("name", ""))
+            kind = pu.get("upgrade_type")
+            if kind in ("EAddToScale", "EMultiplyScale"):
+                bonuses.append((f"+{_coef(v)}" if kind == "EAddToScale" else f"x{_coef(v)}", f"{label} Scaling"))
+            else:
+                bonuses.append((_fmt(v, "sign", p.get("postfix") or unit), label))
+        # Where Valve wrote no text for an upgrade, its changes in the wording of the ones it
+        # did write: "+4s Duration".
+        written = d["tiers"][n] if n < 3 else ""
+        generated = "<br>".join(
+            f'<span class="highlight">{html.escape(value)}</span> {html.escape(name)}' for value, name in bonuses
+        )
+        upgrades.append({"text": written or generated, "bonuses": [f"{value} {name}" for value, name in bonuses]})
     return {
         "id": raw["id"],
         "name": raw["name"],
@@ -410,6 +557,7 @@ def planner_json(data: dict, client_version: int | None) -> dict:
                 "tier": i["tier"],
                 "cost": i["cost"],
                 "active": i["active"],
+                "imbue": i["imbue"],
                 "image": i["image"],
                 "components": i["components"],
                 "upgrades_to": i["upgrades_to"],

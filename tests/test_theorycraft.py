@@ -410,3 +410,199 @@ def test_gamedata_etag_follows_the_content(conn, monkeypatch):
     original = gamedata.planner_json
     monkeypatch.setattr(gamedata, "planner_json", lambda d, v: {**original(d, v), "extra": 1})
     assert gamedata.GameData().get(conn)["etag"] != before["etag"]
+
+
+def test_scaling_and_distances():
+    data = gamedata.normalise(GAME["items"], GAME["heroes"], GAME["generic"])
+    dagger = next(a for a in data["heroes_by_id"][HAZE]["abilities"] if a["name"] == "Sleep Dagger")
+    props = {p["key"]: p for s in dagger["tooltip"] for p in s["big"] + s["lines"]}
+    # The game's "x2.2" on the damage: what each point of spirit power adds.
+    assert props["Damage"]["value"] == "65"
+    assert props["Damage"]["scale"] == {"stat": "spirit", "per": 2.2, "text": "2.2"}
+    assert props["Damage"]["calc"] == {"base": 65.0, "sign": "", "postfix": "", "mods": {}, "dp": 1}
+    # A build's ability duration bonus applies to durations, whatever else they scale with.
+    assert props["SleepDuration"]["calc"]["mods"] == {"duration": 1.0} and "scale" not in props["SleepDuration"]
+    assert props["SleepWakeUpDelay"]["scale"]["stat"] == "spirit"
+    assert props["SleepWakeUpDelay"]["calc"]["mods"] == {"duration": 1.0}
+    fn = lambda **sf: gamedata.build_mods({"scale_function": sf})  # noqa: E731
+    assert fn(class_name="scale_function_tech_range") == {"range": 1.0}
+    assert fn(class_name="scale_function_single_stat", specific_stat_scale_type="ETechRadius") == {"radius": 1.0}
+    assert fn(class_name="scale_function_single_stat", specific_stat_scale_type="ETechDuration", stat_scale=1.1) == {
+        "duration": 1.1
+    }
+    assert fn(class_name="scale_function_single_stat", specific_stat_scale_type="ETechCooldown") == {}
+    # Which bonuses apply to a value (duration, range, cooldown) isn't scaling, nor is a zero factor.
+    assert (
+        gamedata.scaling({"scale_function": {"class_name": "scale_function_tech_duration", "stat_scale": 1.0}}) is None
+    )
+    assert (
+        gamedata.scaling(
+            {
+                "scale_function": {
+                    "class_name": "scale_function_single_stat",
+                    "specific_stat_scale_type": "ETechCooldown",
+                    "stat_scale": -1.0,
+                }
+            }
+        )
+        is None
+    )
+    fixation = {
+        "class_name": "scale_function_ability_weapon_damage",
+        "specific_stat_scale_type": "EBaseWeaponDamageIncrease",
+        "stat_scale": 0.0,
+    }
+    assert gamedata.scaling({"scale_function": fixation}) is None
+    assert gamedata.scaling({"scale_function": {**fixation, "stat_scale": 0.7}})["stat"] == "weapon"
+    heal = {"class_name": "scale_function_healing_boon_scale", "stat_scale": 0.06}
+    assert gamedata.scaling({"scale_function": heal}) == {"stat": "boon", "per": 0.06, "text": "0.06"}
+
+    # Distances come with their unit in the value; a value that is only scaling still shows.
+    props = {
+        "Range": {"value": "14m", "label": "Range", "postfix": "m"},
+        "Radius": {"value": "0m", "label": "Radius"},
+        "Heal": {
+            "value": "0",
+            "label": "Heal",
+            "scale_function": {"class_name": "scale_function_healing_spirit_scale", "stat_scale": 0.6},
+        },
+    }
+    assert gamedata.prop(props, "Range")["value"] == "14m" and "calc" not in gamedata.prop(props, "Range")
+    assert gamedata.prop(props, "Radius") is None
+    assert gamedata.prop(props, "Heal")["value"] == "0" and gamedata.prop(props, "Heal")["scale"]["text"] == "0.6"
+
+    # Without Valve's text for an upgrade, its changes are listed; one to scaling says so.
+    ability = {
+        "id": 1,
+        "name": "Keg",
+        "properties": {"Impact": {"value": 40.0, "label": "Impact Damage", "scale_function": heal}},
+        "upgrades": [
+            {
+                "property_upgrades": [
+                    {"name": "Impact", "bonus": 0.25, "scale_stat_filter": "ETechPower", "upgrade_type": "EAddToScale"},
+                    {"name": "Impact", "bonus": "2m"},
+                ]
+            }
+        ],
+    }
+    up = gamedata._ability(ability)["upgrades"][0]
+    assert up["bonuses"] == ["+0.25 Impact Damage Scaling", "+2m Impact Damage"]
+    assert up["text"] == (
+        '<span class="highlight">+0.25</span> Impact Damage Scaling<br><span class="highlight">+2m</span> Impact Damage'
+    )
+
+
+def test_numbers_keep_the_decimals_of_the_data():
+    # Up to two decimals, half up, no trailing zeros: exact but for the data's artifacts.
+    # Multipliers to two, the very small to three.
+    assert [gamedata._round(v, 2) for v in (13.3333, 0.01, 0.15, 0.75, 1.04, 2.75, 40.0, -10.0)] == [
+        "13.33",
+        "0.01",
+        "0.15",
+        "0.75",
+        "1.04",
+        "2.75",
+        "40",
+        "-10",
+    ]
+    assert [gamedata._coef(v) for v in (0.609336, 0.525, 0.015, 2.2, 0.002)] == ["0.61", "0.53", "0.02", "2.2", "0.002"]
+    props = {
+        "DPS": {"value": "13.3333", "label": "Damage Per Second"},
+        "Stun": {
+            "value": "0.75",
+            "label": "Stun Duration",
+            "postfix": "s",
+            "scale_function": {"class_name": "scale_function_tech_duration"},
+        },
+        "Radius": {"value": "6m", "label": "Radius", "scale_function": {"class_name": "scale_function_tech_range"}},
+        "Sprint": {
+            "value": "0.75",
+            "label": "Sprint Speed",
+            "postfix": "m/s",
+            "prefix": "{s:sign}",
+            "provided_property_type": "MODIFIER_VALUE_SPRINT_SPEED",
+        },
+        # A distance without "m" is in engine units.
+        "Range": {"value": "472.441", "label": "Cast Range", "postfix": "m", "display_units": "EDisplayUnit_Meters"},
+    }
+    assert gamedata.prop(props, "DPS")["value"] == "13.33"
+    assert gamedata.prop(props, "Sprint")["value"] == "+0.75m/s"
+    # With a build applied, a value is as precise as its base, with at least one decimal
+    # (in the game a 6m radius with +6% reads 6.4m).
+    assert gamedata.prop(props, "Stun")["value"] == "0.75s" and gamedata.prop(props, "Stun")["calc"]["dp"] == 2
+    assert gamedata.prop(props, "Radius")["value"] == "6m" and gamedata.prop(props, "Radius")["calc"]["dp"] == 1
+    assert gamedata.prop(props, "Range")["value"] == "12m"
+    # Prose keeps the numbers Valve wrote, without the data's artifacts.
+    text = gamedata.clean_html('<span class="highlight">+13.3333</span> DPS, -10.0% for 6.0s, 0.25s, 49.5')
+    assert text == '<span class="highlight">+13.33</span> DPS, -10% for 6s, 0.25s, 49.5'
+
+
+def test_imbue_targets_and_item_tiles(tmp_path):
+    """The game's "Imbue Target": the hero ability a build suggests for an imbue item."""
+    from app import builds
+
+    game = copy.deepcopy(GAME)
+    next(i for i in game["items"] if i["id"] == TOXIC)["imbue"] = "imbue_active_non_ult"
+    abilities = gamedata.normalise(game["items"], game["heroes"])["heroes"][0]["abilities"]
+    dagger = next(a["id"] for a in abilities if not a["ultimate"])
+    ultimate = next(a["id"] for a in abilities if a["ultimate"])
+    found = copy.deepcopy(BUILDS)
+    hb = found[0]["hero_build"]
+    mods = [m for cat in hb["details"]["mod_categories"] for m in cat["mods"]]
+    next(m for m in mods if m["ability_id"] == TOXIC)["imbue_target_ability_id"] = dagger
+    c, _ = make_client(tmp_path, api=GameApi(game=game, builds=found))
+
+    # A published build shows the suggestion under the item, as the game's tooltip names it.
+    page = c.get(f"/builds/{HAZE}/{hb['hero_build_id']}").text
+    assert "Imbue Suggestion: Sleep Dagger" in page
+    # As on the game's shop card: imbue items say so, actives are round and carry no tag.
+    assert '<span class="tile-imbue">Imbue</span>' in page and "tile-active" not in page
+    data = c.get("/gamedata.json").json()
+    assert next(i for i in data["items"] if i["id"] == TOXIC)["imbue"] == "imbue_active_non_ult"
+    assert next(i for i in data["items"] if i["id"] == EXTRA_HEALTH)["imbue"] == ""
+
+    # Saved from the editor: kept on an imbue item for an ability it can take, dropped otherwise.
+    def saved(target, item=TOXIC):
+        mod = {"ability_id": item, "imbue_target_ability_id": target}
+        r = c.post("/api/builds", json={"hero_id": HAZE, "name": "x", "details": details([mod])})
+        return editor_state(c.get(r.json()["url"]).text)["details"]["mod_categories"][0]["mods"][0]
+
+    assert saved(dagger) == {"ability_id": TOXIC, "imbue_target_ability_id": dagger}
+    assert saved(ultimate) == {"ability_id": TOXIC}  # this item can't imbue an ultimate
+    assert saved(12345) == {"ability_id": TOXIC}  # not one of the hero's abilities
+    assert saved(dagger, EXTRA_HEALTH) == {"ability_id": EXTRA_HEALTH}  # not an imbue item
+    cats = builds.categories({"mod_categories": [{"mods": [{"ability_id": TOXIC, "imbue_target_ability_id": dagger}]}]})
+    assert cats[0]["mods"][0]["imbue"] == dagger
+
+
+def test_signs_as_the_game_writes_them():
+    """The game data says what stands before a number; a slow is written 40 and shown -40%."""
+    props = {
+        "Slow": {
+            "value": "40",
+            "label": "Move Speed",
+            "postfix": "%",
+            "prefix": "-",
+            "provided_property_type": "MODIFIER_VALUE_MOVEMENT_SPEED_SLOW_PERCENT",
+        },
+        "Speed": {
+            "value": "4m",
+            "label": "Move Speed",
+            "postfix": " m",
+            "prefix": "{s:sign}",
+            "provided_property_type": "MODIFIER_VALUE_MOVEMENT_SPEED_MAX",
+        },
+        "Shred": {"value": "-10", "label": "Bullet Resist", "postfix": "%", "prefix": "{s:sign}"},
+        "Amp": {"value": "7", "label": "Damage Amplification", "postfix": "%", "prefix": "+"},
+        # Given to the hero, but the game writes no sign for it.
+        "Reduction": {
+            "value": "15",
+            "label": "Damage Reduction",
+            "postfix": "%",
+            "provided_property_type": "MODIFIER_VALUE_ALL_DAMAGE_TAKEN_REDUCTION",
+        },
+    }
+    shown = {k: gamedata.prop(props, k)["value"] for k in props}
+    assert shown == {"Slow": "-40%", "Speed": "+4 m", "Shred": "-10%", "Amp": "+7%", "Reduction": "15%"}
+    # Summed into a build's stats, a slow counts as a reduction.
+    assert {s["key"]: s["value"] for s in gamedata.item_stats(props)}["Slow"] == -40

@@ -60,14 +60,24 @@ screen"; the last game data stays available offline). Styled after the game's ow
 
 - `/items`: the shop, by category and tier. Tapping an item (hovering on desktop) shows its
   tooltip as in the game: stats, passive/active blocks with cooldowns, what it builds from and into.
+  Scaling is drawn as in the game (from its own panel layouts and stylesheets): the stat's
+  arrow with `x0.61` in a value's corner, and scaled ability boxes tinted in the stat's colour.
+  In the build editor a value changed by the build shows as in the game's detail view, the
+  base value struck through next to the current one: spirit scaling at the build's spirit
+  power, and durations, ranges and radii with its ability duration, range and radius bonuses.
+  Numbers keep the decimals the game data has, up to two (scaling multipliers two as well).
+  Clicking a calculated value opens its breakdown, like the game's stat formula panel: base,
+  what each stat adds and where that stat comes from, and the total to two decimals.
 - `/heroes/<id>`: weapon, vitality and spirit stats, per-level gains, every ability with its
   tooltip and 1/2/5 AP upgrades, and the investment payoffs of each shop category.
 - `/builds`: pick a hero, then browse the builds people published in the game (deadlock-api's
   mirror of Valve's build browser). A build shows its categories, annotations and ability order.
   `/players/<id>/builds` lists a tracked player's own in-game builds.
 - `/planner`: a build editor like the game's: named categories with descriptions and an
-  optional flag, items with annotations and sell priority, the ability point order, souls per
-  category with investment bonuses, and summed stats. Any in-game build opens in it unchanged.
+  optional flag, items with annotations, sell priority and, for imbue items, the game's
+  "Imbue Target" (the ability the shop suggests and Quickbuy picks), the ability point order,
+  souls per category with investment bonuses, and summed stats. Any in-game build opens in it
+  unchanged.
   Builds are saved per player ("Who are you?" in the menu). On phones it has Build / Shop /
   Abilities / Stats tabs.
 - "Publish to game" (needs the fetcher): the Steam bot publishes the build to the game's build

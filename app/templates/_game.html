@@ -15,8 +15,8 @@
 
 {# An item tile rendered on the server, same markup as DL.tile in ui.js. #}
 {% macro tile(item, note=None, small=False) -%}
-<button type="button" class="tile slot-{{ item.slot }}{{ ' small' if small }}" data-item="{{ item.id }}" title="{{ item.name }}{% if note %} — {{ note }}{% endif %}">
-  <span class="tile-art"><span class="tile-tier">{{ "★" if item.tier == 5 else "T" ~ item.tier }}</span><img src="{{ item.image }}" alt="" loading="lazy">{% if item.active %}<span class="tile-active">Active</span>{% endif %}{% if note %}<span class="tile-note"></span>{% endif %}</span>
+<button type="button" class="tile slot-{{ item.slot }}{{ ' small' if small }}{{ ' active' if item.active }}" data-item="{{ item.id }}" title="{{ item.name }}{% if note %} — {{ note }}{% endif %}">
+  <span class="tile-art"><span class="tile-tier">{{ "★" if item.tier == 5 else "T" ~ item.tier }}</span><img src="{{ item.image }}" alt="" loading="lazy">{% if item.imbue %}<span class="tile-imbue">Imbue</span>{% endif %}{% if note %}<span class="tile-note"></span>{% endif %}</span>
   <span class="tile-name">{{ item.name }}</span>
 </button>
 {%- endmacro %}

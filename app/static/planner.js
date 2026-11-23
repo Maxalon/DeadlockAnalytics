@@ -20,7 +20,7 @@
       name: String(c.name || ""),
       description: String(c.description || ""),
       optional: !!c.optional,
-      mods: (c.mods || []).map((m) => ({ id: toInt(m.ability_id), note: String(m.annotation || ""), prio: toInt(m.sell_priority) }))
+      mods: (c.mods || []).map((m) => ({ id: toInt(m.ability_id), note: String(m.annotation || ""), prio: toInt(m.sell_priority), imbue: toInt(m.imbue_target_ability_id) }))
         .filter((m) => m.id !== null),
     })),
     order: (((init.details || {}).ability_order || {}).currency_changes || [])
@@ -54,6 +54,10 @@
     return { all, gone };
   }
 
+  /** The abilities an imbue item may be suggested for on this hero (the game's "Imbue Target"). */
+  const imbueOptions = (it) => (it?.imbue && hero() ? hero().abilities.filter((a) => !(it.imbue === "imbue_active_non_ult" && a.ultimate)) : []);
+  const imbueTarget = (m) => imbueOptions(DL.items.get(m.id)).find((a) => a.id === m.imbue) || null;
+
   function renderHero() {
     const h = hero();
     $("ed-hero").innerHTML = h ? `<img src="${esc(h.card || h.icon)}" alt=""><span>${esc(h.name)} · change</span>` : "<span>Pick a hero</span>";
@@ -61,7 +65,8 @@
 
   function targetLine() {
     const c = state.cats[target];
-    return c ? `Adding to <b>${esc(c.name || "Items")}</b> · tap an item to add it` : "";
+    const how = window.matchMedia("(pointer: coarse)").matches ? "tap an item to add it, hold it for details" : "tap an item to add it";
+    return c ? `Adding to <b>${esc(c.name || "Items")}</b> · ${how}` : "";
   }
 
   function renderCats() {
@@ -79,7 +84,8 @@
         <div class="tile-row">
           ${c.mods.map((m, mi) => {
             const it = DL.items.get(m.id);
-            return it ? `<div data-mod="${mi}">${DL.tile(it, { note: !!m.note, dim: gone.has(m.id) })}${m.note ? `<div class="cat-note">${esc(m.note)}</div>` : ""}</div>` : "";
+            const target = imbueTarget(m);
+            return it ? `<div data-mod="${mi}">${DL.tile(it, { note: !!m.note, dim: gone.has(m.id) })}${target ? `<div class="cat-imbue" title="Imbue Suggestion: ${esc(target.name)}"><img src="${esc(target.image)}" alt="Imbue Suggestion:"><span>${esc(target.name)}</span></div>` : ""}${m.note ? `<div class="cat-note">${esc(m.note)}</div>` : ""}</div>` : "";
           }).join("") || `<span class="drop-hint">${ci === target ? "Tap items in the shop to add them here." : "Empty. Tap “Add here”, then items in the shop."}</span>`}
         </div>
       </section>`).join("");
@@ -131,7 +137,13 @@
   function editMod(ci, mi) {
     const m = state.cats[ci].mods[mi];
     const it = DL.items.get(m.id);
+    const options = imbueOptions(it);
+    let imbue = imbueTarget(m)?.id ?? null;
+    const imbueField = !it.imbue ? "" : `<label id="ed-imbue-label">Imbue Target</label>${hero()
+      ? `<div class="imbue-pick" role="group" aria-labelledby="ed-imbue-label"><button type="button" class="imbue-opt${imbue === null ? " on" : ""}" data-imbue="0" aria-pressed="${imbue === null}"><i class="imbue-none"></i><span>None</span></button>${hero().abilities.map((a) => `<button type="button" class="imbue-opt${a.id === imbue ? " on" : ""}" data-imbue="${a.id}" aria-pressed="${a.id === imbue}" ${options.includes(a) ? "" : 'disabled title="Cannot be imbued"'}><img src="${esc(a.image)}" alt=""><span>${esc(a.name)}</span></button>`).join("")}</div>`
+      : '<p class="muted small imbue-help">Pick a hero to choose the ability this item should imbue.</p>'}`;
     const form = `<div class="sheet-form">
+        ${imbueField}
         <label for="ed-note">Annotation (shown in game)</label><input type="text" id="ed-note" maxlength="200" value="${esc(m.note)}" placeholder="e.g. buy when behind, rush vs. healers">
         <label for="ed-prio">Sell priority (1–100, empty for none)</label><input type="number" id="ed-prio" min="1" max="100" value="${m.prio ?? ""}">
         <label for="ed-move">Category</label><select id="ed-move">${state.cats.map((c, i) => `<option value="${i}"${i === ci ? " selected" : ""}>${esc(c.name || "Items")}</option>`).join("")}</select>
@@ -139,6 +151,7 @@
       </div>`;
     DL.sheet(DL.itemTip(it) + form, (sheet) => {
       const apply = () => {
+        m.imbue = imbue;
         m.note = sheet.querySelector("#ed-note").value.trim();
         const p = toInt(sheet.querySelector("#ed-prio").value);
         m.prio = p && p >= 1 && p <= 100 ? p : null;
@@ -152,6 +165,20 @@
       };
       const finish = () => { apply(); DL.closeSheet(); renderAll(); };
       sheet.addEventListener("click", (e) => {
+        const opt = e.target.closest("[data-imbue]");
+        if (opt) {
+          // "None" (0) leaves the choice to the player in game; so does a second tap on the
+          // chosen ability.
+          const id = Number(opt.dataset.imbue) || null;
+          imbue = imbue === id ? null : id;
+          for (const b of sheet.querySelectorAll("[data-imbue]")) {
+            const on = (Number(b.dataset.imbue) || null) === imbue;
+            b.classList.toggle("on", on);
+            b.setAttribute("aria-pressed", on);
+          }
+          markDirty();
+          return;
+        }
         if (e.target.closest("[data-done]")) finish();
         else if (e.target.closest("[data-rm]")) {
           state.cats[ci].mods.splice(state.cats[ci].mods.indexOf(m), 1);
@@ -182,7 +209,7 @@
     if (!state.cats[target]) target = 0;
     const where = state.cats.findIndex((c) => c.mods.some((m) => m.id === it.id));
     if (where >= 0) return toast(`${it.name} is already in “${state.cats[where].name || "Items"}”`);
-    state.cats[target].mods.push({ id: it.id, note: "", prio: null });
+    state.cats[target].mods.push({ id: it.id, note: "", prio: null, imbue: null });
     markDirty();
     renderAll();
     toast(`${it.name} → ${state.cats[target].name || "Items"}`);
@@ -227,7 +254,7 @@
       return `<div style="display:grid;gap:4px"><button type="button" class="ed-ab" data-ab="${a.id}" ${done ? "disabled" : ""}>
           <img src="${esc(a.image)}" alt="" data-ability="${h.id}:${a.id}"><span>${esc(a.name)}</span>
           <span class="pips">${[0, 1, 2].map((i) => `<i class="${i < t ? "on" : ""}"></i>`).join("")}</span><span class="unl">${next}</span></button>
-          <a href="#" class="small" data-info="${a.id}" style="text-align:center">Details</a></div>`;
+          <button type="button" class="ed-ab-info" data-info="${a.id}" aria-label="${esc(a.name)} details">Details</button></div>`;
     }).join("");
     const byId = new Map(h.abilities.map((a) => [a.id, a]));
     const seen = new Map();
@@ -244,7 +271,6 @@
   $("ed-abilities").addEventListener("click", (e) => {
     const info = e.target.closest("[data-info]");
     if (info) {
-      e.preventDefault();
       DL.sheet(DL.abilityTip(DL.abilities.get(Number(info.dataset.info))));
       return;
     }
@@ -300,11 +326,28 @@
       }).join("")}</div>${h ? "" : '<p class="muted small">Pick a hero to see investment bonuses.</p>'}`;
 
     const sum = (stat, postfix) => [...totals.values()].filter((t) => t.stat === stat && (postfix === undefined || t.postfix === postfix)).reduce((a, t) => a + t.value, 0);
+    // Tooltips opened from here show their numbers with this build's stats applied.
+    // Which items a percentage bonus comes from, for the breakdown of a value.
+    const from = (stat) => [...all].filter((id) => !gone.has(id)).map((id) => DL.items.get(id))
+      .flatMap((it) => it.stats.filter((st) => st.stat === stat && st.postfix === "%").map((st) => [it.name, st.value, "%"]));
+    const itemSpirit = sum("MODIFIER_VALUE_TECH_POWER");
+    DL.build = {
+      spirit: Math.round(itemSpirit + reached.spirit),
+      duration: sum("MODIFIER_VALUE_BONUS_ABILITY_DURATION_PERCENTAGE", "%"),
+      range: sum("MODIFIER_VALUE_TECH_RANGE_PERCENT", "%"),
+      radius: sum("MODIFIER_VALUE_TECH_RADIUS_PERCENT", "%"),
+      sources: {
+        spirit: [["Items", itemSpirit], ["Shop Bonuses", reached.spirit]].filter(([, v]) => v),
+        duration: from("MODIFIER_VALUE_BONUS_ABILITY_DURATION_PERCENTAGE"),
+        range: from("MODIFIER_VALUE_TECH_RANGE_PERCENT"),
+        radius: from("MODIFIER_VALUE_TECH_RADIUS_PERCENT"),
+      },
+    };
     const rows = [];
     if (h) {
       const base = h.panel.base_health || 0;
       rows.push(["Health", num(Math.round(base * (1 + reached.vitality / 100) + sum("MODIFIER_VALUE_HEALTH_MAX")))]);
-      rows.push(["Spirit power", num(Math.round(sum("MODIFIER_VALUE_TECH_POWER") + reached.spirit))]);
+      rows.push(["Spirit power", num(DL.build.spirit)]);
       rows.push(["Weapon damage", `+${num(Math.round(sum("MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE", "%") + reached.weapon))}%`]);
     }
     // Already summed into the hero rows above.
@@ -331,8 +374,14 @@
         const b = e.target.closest("[data-hero-pick]");
         if (!b) return;
         const id = Number(b.dataset.heroPick);
-        if (id !== state.hero && state.order.length && !confirm("Changing the hero clears the ability order. Continue?")) return;
-        if (id !== state.hero) state.order = [];
+        const mods = state.cats.flatMap((c) => c.mods);
+        const imbued = mods.some((m) => m.imbue);
+        const lost = [state.order.length ? "the ability order" : "", imbued ? "the imbue targets" : ""].filter(Boolean).join(" and ");
+        if (id !== state.hero && lost && !confirm(`Changing the hero clears ${lost}. Continue?`)) return;
+        if (id !== state.hero) {
+          state.order = [];
+          for (const m of mods) m.imbue = null;
+        }
         state.hero = id;
         markDirty();
         DL.closeSheet();
@@ -354,7 +403,7 @@
           name: c.name,
           description: c.description,
           optional: c.optional,
-          mods: c.mods.map((m) => ({ ability_id: m.id, annotation: m.note || undefined, sell_priority: m.prio || undefined })),
+          mods: c.mods.map((m) => ({ ability_id: m.id, annotation: m.note || undefined, sell_priority: m.prio || undefined, imbue_target_ability_id: m.imbue || undefined })),
         })),
         ability_order: { currency_changes: state.order.map((s) => ({ ability_id: s.id, currency_type: s.type, delta: s.delta })) },
       },
@@ -416,9 +465,20 @@
     for (const c of state.cats) c.mods = c.mods.filter((m) => DL.items.has(m.id));
     if (!DL.heroes.has(state.hero)) state.hero = null;
     state.order = validOrder(state.order);
+    // An imbue target has to be an ability of this hero that the item can take.
+    for (const c of state.cats) for (const m of c.mods) m.imbue = imbueTarget(m)?.id ?? null;
     $("ed-name").value = state.name;
     $("ed-desc").value = state.description;
-    shop = DL.shop($("ed-shop"), { onPick: addItem, dim: (it) => owned().all.has(it.id) });
+    shop = DL.shop($("ed-shop"), {
+      onPick: addItem,
+      // Held on a touch screen: the item's tooltip, with the tap's action as a button.
+      onHold: (it, el) => {
+        const has = owned().all.has(it.id);
+        const sheet = DL.openTip(el, `<div class="tip-actions"><button type="button" class="btn" data-add ${has ? "disabled" : ""}>${has ? "In the build" : `Add to ${esc(state.cats[target]?.name || "Items")}`}</button></div>`);
+        sheet.querySelector("[data-add]").addEventListener("click", () => { DL.closeSheet(); addItem(it); });
+      },
+      dim: (it) => owned().all.has(it.id),
+    });
     renderAll();
     renderPublished();
   }).catch((err) => {

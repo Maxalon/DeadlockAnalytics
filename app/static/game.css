@@ -28,12 +28,15 @@
   padding: 9px 16px; border-radius: 6px; border: 1px solid var(--gold); background: var(--gold); color: #1a1408; cursor: pointer; }
 .btn.ghost { background: none; color: var(--gold); }
 .btn.small { padding: 6px 10px; font-size: .85rem; }
+.btn:disabled { opacity: .45; cursor: default; }
+.tip-actions .btn { min-height: 44px; flex: 1; justify-content: center; }
 .btn:hover { text-decoration: none; filter: brightness(1.08); }
 select, textarea { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
 textarea { width: 100%; resize: vertical; }
 input[type=search], input[type=text] { background: var(--panel); border-color: var(--line); }
 
-/* ---- Item tile: the shop's square icon on its category colour ---- */
+/* ---- Item tile: the shop's icon on its category colour. As on the game's shop card, an
+   active item is round and carries no tag; an imbue item says IMBUE. ---- */
 .tile { position: relative; display: inline-flex; flex-direction: column; align-items: center; width: 74px; padding: 0; border: 0; background: none; color: var(--text); cursor: pointer; font: inherit; text-align: center; }
 .tile .tile-art { position: relative; width: 74px; height: 74px; border-radius: 6px; border: 1px solid var(--c-mid);
   background: radial-gradient(circle at 50% 35%, var(--c-mid), var(--c-dark) 75%); display: grid; place-items: center; overflow: hidden; }
@@ -41,10 +44,18 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tile .tile-name { margin-top: 4px; font-size: .72rem; line-height: 1.15; max-width: 74px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .tile .tile-cost { font-size: .72rem; }
 .tile .tile-tier { display: none; }
-.tile .tile-active { position: absolute; bottom: 0; left: 0; right: 0; font: 700 .58rem/1.5 "Barlow Condensed", sans-serif; letter-spacing: .08em; text-transform: uppercase; background: rgb(0 0 0 / .55); color: var(--c); }
+.tile.active .tile-art, .tile.active .tile-art img { border-radius: 50%; }
+.tile .tile-imbue { position: absolute; bottom: 2px; left: 0; right: 0; font-size: .62rem; font-style: italic; font-weight: 700; line-height: 1.2; letter-spacing: 1px; text-transform: uppercase;
+  color: #e7c8ff; text-shadow: 0 0 3px #10130d, 0 0 3px #10130d, 0 0 5px #10130d; }
+.tile.active .tile-imbue { bottom: 7px; }
+.tile.small .tile-imbue { font-size: .54rem; letter-spacing: .5px; }
 .tile .tile-note { position: absolute; top: 3px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
 .tile:hover .tile-art, .tile:focus-visible .tile-art { border-color: var(--c); box-shadow: 0 0 0 1px var(--c), 0 0 14px -2px var(--c); }
 .tile.dim { opacity: .38; }
+/* The picture is never the target of a press: a long press on the tile then isn't one on an image. */
+.tile img { pointer-events: none; -webkit-user-drag: none; }
+/* Tiles that take a long press (DL.onHold): no text selection, no iOS callout. */
+.holdable .tile { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 .tile.small { width: 54px; }
 .tile.small .tile-art { width: 54px; height: 54px; }
 .tile.small .tile-name { max-width: 54px; font-size: .66rem; }
@@ -82,16 +93,73 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .tip-sec-head .cd { display: inline-flex; gap: 10px; color: var(--text); letter-spacing: 0; }
 .tip-text { padding: 8px 10px 4px; margin: 0; }
 .tip-bigs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
-.tip-big { flex: 1 1 90px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border-radius: 6px; background: var(--panel-2); text-align: center; }
-.tip-big img { width: 22px; height: 22px; }
-.tip-big b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
-.tip-big span { font-size: .72rem; color: var(--muted); line-height: 1.15; }
+.tip-big { position: relative; flex: 1 1 90px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 58px; padding: 6px 4px;
+  border: 1.5px solid transparent; background: var(--panel-2); text-align: center; }
+.tip-big > span:not(.sc) { font-size: .72rem; color: var(--muted); line-height: 1.15; }
+/* A value as the game sets it: icon, the base value struck through when a build changed it, the
+   current value, units smaller. Sizes are the game's (26px value in a 500px tooltip) at this width. */
+.tip-val { display: inline-flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 0 4px; font-variant-numeric: tabular-nums; }
+.tip-val img { align-self: center; flex: none; }
+.tip-val b small { font-weight: 600; }
+.tip-val s { color: var(--struck); font-weight: 600; }
+.tip-big .tip-val img { width: 15px; height: 15px; }
+.tip-big .tip-val b { font-size: 1.15rem; line-height: 1.2; }
+.tip-big .tip-val b small { font-size: .7em; color: var(--unit); }
+.tip-big .tip-val s { font-size: .88rem; }
+.tip-sec.ability .tip-big .tip-val img { opacity: .3; }
 .tip-lines { padding: 4px 10px 8px; display: grid; gap: 2px; }
-.tip-line { display: flex; align-items: center; gap: 6px; }
-.tip-line img { width: 16px; height: 16px; flex: none; }
-.tip-line b { font-variant-numeric: tabular-nums; }
+.tip-line { position: relative; display: flex; align-items: center; gap: 6px; }
+.tip-line > img { width: 16px; height: 16px; flex: none; }
+.tip-line .tip-val b small { font-size: .88em; }
 .tip-line.cond { color: var(--muted); }
 .tip-innate .tip-line b { color: var(--c, var(--text)); }
+.tip-sec-head .tip-val { gap: 3px; }
+/* What a value scales with: the stat's arrow, `x0.61` under it, in the box's top right corner.
+   A scaled ability box takes the stat's border and glow. */
+.tip { --struck: #ffffff40; --unit: #a4a4a4; --sc-spirit: #e7c8ff; --sc-weapon: #ffd18d; --sc-boon: #53e1c4; --sc-x: #ffffff86; --sc-shadow: 0 0 3px #10130d;
+  --box-spirit: rgb(138 85 179 / .4); --glow-spirit: rgb(97 52 132 / .5); --box-weapon: rgb(157 98 11 / .3); --glow-weapon: rgb(127 84 14 / .3);
+  --box-boon: rgb(153 255 214 / .1); --glow-boon: rgb(153 255 214 / .1); --glow-mid: #00000080; }
+:root[data-theme="light"] .tip { --struck: #00000055; --unit: #6d675b; --sc-spirit: var(--spirit); --sc-weapon: var(--weapon); --sc-boon: var(--souls); --sc-x: #00000070; --sc-shadow: none;
+  --box-spirit: rgb(138 85 179 / .45); --glow-spirit: rgb(138 85 179 / .22); --box-weapon: rgb(157 98 11 / .45); --glow-weapon: rgb(157 98 11 / .2);
+  --box-boon: rgb(31 143 119 / .4); --glow-boon: rgb(31 143 119 / .16); --glow-mid: #ffffff00; }
+.sc { position: absolute; top: -2px; right: 1px; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
+.sc img { width: 21px; height: 16px; object-fit: contain; object-position: right; }
+.sc span { margin: -3px 1px 0 0; font-size: .6rem; font-weight: 600; line-height: 1; color: var(--sc); text-shadow: var(--sc-shadow); white-space: nowrap; }
+.sc i { margin-right: 1px; font-weight: 700; color: var(--sc-x); }
+.sc.s-spirit { --sc: var(--sc-spirit); }
+.sc.s-weapon, .sc.s-melee { --sc: var(--sc-weapon); }
+.sc.s-boon { --sc: var(--sc-boon); }
+.tip-line .sc { position: static; margin: -2px 0 -2px auto; }
+.tip-sec.ability .tip-bigs { padding-top: 13px; }
+.tip-sec.ability .tip-big { padding-top: 13px; }  /* room for `x0.61` above the value in narrow boxes */
+.tip-sec.ability .tip-big .sc { top: -10px; }
+.tip-sec.ability .tip-big .sc img { width: 26px; height: 19px; }
+.tip-sec.ability .tip-big .sc span { font-size: .66rem; margin-top: -4px; }
+.tip-sec.ability .tip-big.scaled { border-color: var(--box-spirit); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-spirit)); }
+.tip-sec.ability .tip-big.scaled.s-weapon, .tip-sec.ability .tip-big.scaled.s-melee { border-color: var(--box-weapon); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-weapon)); }
+.tip-sec.ability .tip-big.scaled.s-boon { border-color: var(--box-boon); background: radial-gradient(ellipse at center, var(--glow-mid), var(--glow-boon)); }
+/* The breakdown of a calculated value, as the game's stat formula panel: base, what each stat
+   adds (and where the stat comes from, indented), the total on a darker band. */
+[data-formula] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+[data-formula].open { outline: 1px solid var(--gold); outline-offset: 1px; }
+.tip-hint { display: none; margin: 0; padding: 0 12px 8px; font-size: .78rem; color: var(--muted); }
+[data-formula]:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
+.formula-pop { position: fixed; z-index: 70; }
+.formula { width: 210px; padding-top: 5px; border-radius: 3px; background: var(--f-bg); color: var(--f-text); font-size: .78rem; box-shadow: 0 8px 28px rgb(0 0 0 / .5); overflow: hidden;
+  --f-bg: #414141; --f-text: #ffefd7; --f-total: #2f2f2f; --f-spirit: #ce90ff; --f-weapon: #ec9719; --f-boon: #99ffd6; }
+:root[data-theme="light"] .formula { --f-bg: #fbf8f1; --f-text: #2a2618; --f-total: #e9e2d2; --f-spirit: var(--spirit); --f-weapon: var(--weapon); --f-boon: var(--souls); border: 1px solid var(--line); }
+.formula h4 { margin: 0; padding: 1px 11px 4px; font: 700 .72rem/1.2 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .08em; opacity: .55; }
+.formula > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 1.5px 11px; }
+.formula .f-name { font-weight: 500; }
+.formula .f-name small { margin-left: 5px; font-size: .78em; font-weight: 600; }
+.formula .f-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.formula .f-main, .formula .f-total { font-weight: 700; }
+.formula .f-spirit { color: var(--f-spirit); }
+.formula .f-weapon, .formula .f-melee { color: var(--f-weapon); }
+.formula .f-boon { color: var(--f-boon); }
+.formula .f-sub { margin-left: 14px; opacity: .6; }
+.formula .f-zero { opacity: .2; }
+.formula .f-total { margin-top: 6px; padding: 4px 14px 6px; background: var(--f-total); }
 .tip-foot { padding: 8px 12px 12px; border-top: 1px solid var(--line); }
 .tip-foot h4 { margin: 4px 0 6px; font: 700 .78rem/1 "Barlow Condensed", sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .tip-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px; }
@@ -162,6 +230,19 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .cat-desc { margin: 0; padding: 6px 12px 0; color: var(--muted); font-size: .85rem; white-space: pre-line; }
 .cat .tile-row { padding: 10px 12px 12px; }
 .cat-note { font-size: .7rem; color: var(--gold); max-width: 74px; }
+/* The build's imbue target for an item: the ability's icon and name under the tile. */
+.cat-imbue { display: flex; align-items: center; gap: 4px; max-width: 74px; margin-top: 2px; font-size: .68rem; line-height: 1.15; color: var(--spirit); text-align: left; }
+.cat-imbue img { width: 18px; height: 18px; flex: none; border-radius: 4px; background: #222; padding: 2px; }
+.cat-imbue span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cat-imbue[data-ability] { cursor: pointer; }
+.imbue-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.imbue-none { width: 40px; height: 40px; border: 1px dashed var(--muted); border-radius: 8px; opacity: .6; }
+.imbue-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 76px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text);
+  font: inherit; font-size: .7rem; line-height: 1.15; text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.imbue-opt img { width: 40px; height: 40px; border-radius: 8px; background: #222; padding: 4px; }
+.imbue-opt.on { border-color: var(--spirit); box-shadow: 0 0 0 1px var(--spirit); background: var(--spirit-dark); }
+.imbue-opt:disabled { opacity: .35; cursor: default; }
+.imbue-help { margin: 4px 0 0; }
 .ab-order { display: flex; flex-wrap: wrap; gap: 6px; }
 .ab-step { position: relative; display: flex; flex-direction: column; align-items: center; width: 52px; padding: 4px 2px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); font-size: .68rem; color: var(--muted); }
 .ab-step img { width: 34px; height: 34px; border-radius: 6px; background: #222; padding: 3px; }
@@ -197,6 +278,7 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
 .ed-ab .pips i { width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--gold); }
 .ed-ab .pips i.on { background: var(--gold); }
 .ed-ab:disabled { opacity: .45; cursor: default; }
+.ed-ab-info { min-height: 32px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: none; color: var(--gold); font: inherit; font-size: .8rem; cursor: pointer; }
 .ed-ab .unl { font-size: .65rem; color: var(--muted); }
 .ed-box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .ed-box h2 { margin: 0 0 8px; font-size: 1.05rem; }
@@ -245,4 +327,19 @@ input[type=search], input[type=text] { background: var(--panel); border-color: v
   .tile .tile-art { height: 64px; }
   .tile .tile-name { max-width: 64px; }
   .shop-tier { grid-template-columns: 40px 1fr; }
+}
+
+/* ---- Touch screens and phones: values are tapped, not hovered ---- */
+@media (pointer: coarse), (max-width: 700px) {
+  .tip-hint { display: block; }
+  .tip-lines { gap: 0; }
+  .tip-lines .tip-line { min-height: 40px; }
+  .tip-big { min-height: 64px; padding-top: 20px; }  /* narrow boxes: the value clears x0.61 */
+  .cat-imbue[data-ability] { min-height: 40px; }
+  .sc span { font-size: .7rem; }
+  .tip-sec.ability .tip-big .sc span { font-size: .74rem; }
+  .formula { width: min(290px, calc(100vw - 24px)); font-size: .92rem; }
+  .formula > div { padding: 4px 13px; }
+  .formula .f-total { padding: 7px 16px 9px; }
+  .ed-ab-info { min-height: 44px; font-size: .85rem; }
 }
