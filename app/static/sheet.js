@@ -57,12 +57,10 @@
       e.preventDefault();
       Sheet.close();
     });
-    // However the dialog closed, this is where the sheet's state ends.
+    // The dialog closed without finish() (the browser itself, on an Esc it won't have
+    // cancelled). The event arrives a task later: a sheet opened again by then is left alone.
     dialog.addEventListener("close", () => {
-      stopClosing();
-      p.shown = false;
-      p.content.replaceChildren();
-      dialog.style.removeProperty("--sheet-open");
+      if (!dialog.open) reset();
     });
     // Where the sheet is, by any way it got there (a swipe, close(), a snap settling): once it
     // has left the screen the dialog closes.
@@ -85,8 +83,18 @@
     return p;
   }
 
+  /** Close the dialog now. The state ends here, not in the "close" event, which comes later. */
   function finish() {
-    if (parts.dialog.open) parts.dialog.close();  // its "close" event resets the rest
+    if (!parts.dialog.open) return;
+    parts.dialog.close();
+    reset();
+  }
+  /** The state of a sheet that isn't open. */
+  function reset() {
+    stopClosing();
+    parts.shown = false;
+    parts.content.replaceChildren();
+    parts.dialog.style.removeProperty("--sheet-open");
   }
   function stopClosing() {
     clearTimeout(closeTimer);
@@ -105,7 +113,8 @@
       const { dialog, scroller } = parts;
       // Already open and at rest: the new content takes its place without a slide.
       const inPlace = dialog.open && parts.shown && !parts.closing;
-      stopClosing();
+      if (dialog.open) stopClosing();
+      else reset();  // whatever closed it last, this sheet starts clean
       // A fresh element each time: the listeners of the content before go with it.
       const el = document.createElement("div");
       el.className = "sheet-content";

@@ -270,6 +270,34 @@ test("close() straight after open(), and open() straight after close()", async (
   assert.equal(await h.page.evaluate(() => document.querySelector(".sheet").inert), false);
 });
 
+test("open, close, open in one go ends with the last content, and closes by itself", async (t) => {
+  const h = await open(t);
+  // The first sheet hasn't started to slide in, so close() closes the dialog at once; its
+  // "close" event only arrives after the second open().
+  await h.page.evaluate(([a, b]) => { Sheet.open(a); Sheet.close(); Sheet.open(b); }, [SHORT, LONG]);
+  await h.stillOpen();
+  assert.equal((await h.state()).label, "Long");
+  assert.equal(await h.page.evaluate(() => document.querySelectorAll(".sheet-content p").length), 60);
+  // Its slide out ends it, not the backstop a second later.
+  const took = await h.page.evaluate(() => new Promise((resolve) => {
+    const t0 = performance.now();
+    document.querySelector(".sheet-dialog").addEventListener("close", () => resolve(performance.now() - t0), { once: true });
+    Sheet.close();
+  }));
+  assert.ok(took < 900, `closed after ${Math.round(took)}ms`);
+});
+
+test("a dialog closed from outside, then opened again at once, keeps its new content", async (t) => {
+  const h = await open(t);
+  await h.show(SHORT);
+  // As when the browser closes it by itself (a repeated Esc it won't have cancelled).
+  await h.page.evaluate((x) => { document.querySelector(".sheet-dialog").close(); Sheet.open(x); }, LONG);
+  await h.stillOpen();
+  assert.equal(await h.page.evaluate(() => document.querySelectorAll(".sheet-content p").length), 60);
+  await h.page.touchscreen.tap(195, 40);
+  await h.closed();
+});
+
 test("an error while wiring the content still leaves a sheet that shows and closes", async (t) => {
   const h = await open(t);
   await h.page.evaluate((x) => {
