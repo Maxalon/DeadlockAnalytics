@@ -68,6 +68,9 @@ screen"; the last game data stays available offline). Styled after the game's ow
   Numbers keep the decimals the game data has, up to two (scaling multipliers two as well).
   Clicking a calculated value opens its breakdown, like the game's stat formula panel: base,
   what each stat adds and where that stat comes from, and the total to two decimals.
+  On a phone, tooltips and the editor's forms open in a sheet from the bottom edge. It closes
+  with a swipe down (on its bar, or on its content once that is scrolled to the top), a tap
+  outside it, its close button, or the phone's back gesture.
 - `/heroes/<id>`: weapon, vitality and spirit stats, per-level gains, every ability with its
   tooltip and 1/2/5 AP upgrades, and the investment payoffs of each shop category.
 - `/builds`: pick a hero, then browse the builds people published in the game (deadlock-api's

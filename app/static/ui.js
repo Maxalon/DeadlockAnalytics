@@ -1,5 +1,5 @@
 // Shared UI for the item, hero, build and editor pages: game data, item tiles, Deadlock-style
-// tooltips (a popover on desktop, a bottom sheet on phones) and the shop.
+// tooltips (a popover on desktop, a bottom sheet on phones), the sheet itself and the shop.
 // Any element with data-item="<id>" or data-ability="<heroId>:<abilityId>" opens its tooltip.
 (() => {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -162,20 +162,80 @@
     pop = null;
     popFor = null;
   }
-  DL.closeSheet = () => document.querySelector(".sheet-backdrop")?.remove();
-  /** A bottom sheet with arbitrary content; `onOpen(sheetEl)` wires its controls. */
-  DL.sheet = (content, onOpen) => {
-    DL.closeSheet();
-    closePop();
-    const back = document.createElement("div");
-    back.className = "sheet-backdrop";
-    back.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><div class="sheet-grip"></div><button type="button" class="sheet-close" aria-label="Close">✕</button>${content}</div>`;
-    back.addEventListener("click", (e) => {
-      if (e.target === back || e.target.closest(".sheet-close")) DL.closeSheet();
+  // The sheet is a modal <dialog> (top layer, the page behind inert, Esc and the phone's back
+  // gesture close it) whose swipe is native scrolling: a scroller with two snap stops, a
+  // screen-high gap above the sheet ("closed") and the sheet itself ("open"). A finger on the
+  // bar, or on the content once that is scrolled to its top, drags the sheet; it settles on one
+  // of the stops, and reaching "closed" closes the dialog. After Chrome's Modern Web Guidance,
+  // "Navigation Drawer", turned upright.
+  const CLOSE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>';
+  let sheet = null;
+  function buildSheet() {
+    const dialog = document.createElement("dialog");
+    dialog.className = "sheet-dialog";
+    dialog.innerHTML = `<div class="sheet-scroller"><div class="sheet">
+        <div class="sheet-bar"><span class="sheet-grip"></span><button type="button" class="sheet-close" aria-label="Close" autofocus>${CLOSE_ICON}</button></div>
+        <div class="sheet-content"></div>
+      </div></div>`;
+    document.body.appendChild(dialog);
+    const s = { dialog, scroller: dialog.firstChild, panel: dialog.querySelector(".sheet"), content: dialog.querySelector(".sheet-content"), shown: false };
+    // A tap on the dimmed part. composedPath: the tap's own handler may have replaced what was tapped.
+    dialog.addEventListener("click", (e) => {
+      if (!e.composedPath().includes(s.panel) || e.target.closest(".sheet-close")) DL.closeSheet();
     });
-    document.body.appendChild(back);
-    onOpen?.(back.querySelector(".sheet"));
-    return back.querySelector(".sheet");
+    // Esc and the back gesture: slide out instead of vanishing; with a breakdown open, only
+    // that closes. (A browser may refuse to have a repeated Esc cancelled; then it just closes.)
+    dialog.addEventListener("cancel", (e) => {
+      if (!e.cancelable) return;
+      e.preventDefault();
+      if (formulaPop) closeFormula();
+      else DL.closeSheet();
+    });
+    dialog.addEventListener("close", () => {
+      s.shown = false;
+      s.content.replaceChildren();
+      dialog.style.removeProperty("--sheet-open");
+    });
+    // Where the sheet is, by any way it got there (a swipe, a button, a snap settling).
+    const visible = 1 / window.innerHeight;
+    new IntersectionObserver((entries) => {
+      if (entries.at(-1).intersectionRatio >= visible) s.shown = true;
+      else if (s.shown && dialog.open) dialog.close();
+    }, { root: dialog, threshold: [visible, 1] }).observe(s.panel);
+    // The dimming follows the sheet: in CSS where scroll-driven animations exist, else from here.
+    if (!CSS.supports("(animation-timeline: scroll()) and (timeline-scope: --sheet)")) {
+      s.scroller.addEventListener("scroll", () => {
+        dialog.style.setProperty("--sheet-open", Math.min(1, s.scroller.scrollTop / s.panel.offsetHeight));
+      }, { passive: true });
+    }
+    return s;
+  }
+  /** Slide the sheet out; the dialog closes once it is off the screen. */
+  DL.closeSheet = () => {
+    if (!sheet?.dialog.open) return;
+    sheet.content.inert = true;  // on its way out: a second tap must not act again
+    sheet.scroller.scrollTo({ top: 0, behavior: "auto" });  // auto: smooth unless reduced motion (CSS)
+  };
+  /** A bottom sheet with arbitrary content; `onOpen(contentEl)` wires its controls. An open
+   *  sheet is replaced in place. Returns the element holding the content. */
+  DL.sheet = (content, onOpen) => {
+    closePop();
+    closeFormula();
+    sheet ||= buildSheet();
+    const { dialog, scroller } = sheet;
+    // A fresh element each time: the listeners of the content before go with it.
+    const el = document.createElement("div");
+    el.className = "sheet-content";
+    el.innerHTML = content;
+    sheet.content.replaceWith(el);
+    sheet.content = el;
+    dialog.setAttribute("aria-label", el.querySelector("h2, h3")?.textContent.trim() || "Details");
+    const replaced = dialog.open;
+    if (replaced) dialog.querySelector(".sheet-close").focus({ preventScroll: true });
+    else dialog.showModal();  // opens on the "closed" stop, the sheet below the screen
+    onOpen?.(el);  // before the slide: it may still change how tall the content is
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: replaced && sheet.shown ? "instant" : "auto" });
+    return el;
   };
   function tipFor(el) {
     if (el.dataset.item) {
@@ -222,10 +282,7 @@
   });
   document.addEventListener("scroll", closePop, { passive: true });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closePop();
-      DL.closeSheet();
-    }
+    if (e.key === "Escape") closePop();
   });
   // ---- long press ----
   const HOLD_MS = 450;
@@ -301,7 +358,7 @@
     formulaPop.innerHTML = formulaTip(JSON.parse(el.dataset.formula));
     formulaPop.source = el;
     el.classList.add("open");
-    document.body.appendChild(formulaPop);
+    (el.closest("dialog") || document.body).appendChild(formulaPop);
     const r = el.getBoundingClientRect();
     const w = formulaPop.offsetWidth;
     const h = formulaPop.offsetHeight;
@@ -328,8 +385,10 @@
   }, true);
   document.addEventListener("keydown", (e) => {
     const el = e.target.closest?.("[data-formula]");
-    if (e.key === "Escape") closeFormula();
-    else if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFormula(el); }
+    if (e.key === "Escape" && formulaPop) {
+      closeFormula();
+      e.preventDefault();  // only the breakdown: the sheet under it stays
+    } else if (el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFormula(el); }
   });
   document.addEventListener("scroll", closeFormula, { passive: true, capture: true });
 
