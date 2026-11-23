@@ -50,7 +50,10 @@
     const f = 10 ** dp;
     return String(Math.sign(v) * Math.round(Math.abs(v) * f + 1e-9) / f);
   };
-  const fmt = (v, c, dp = c.dp) => `${c.signed && v > 0 ? "+" : ""}${round(v, dp)}${c.postfix}`;
+  // What the game puts before a number: "+" by its sign, or a literal "+" / "-" (a slow is
+  // written 40 and shown -40%).
+  const lead = (v, c) => (v > 0 ? (c.sign === "sign" ? "+" : c.sign) : "");
+  const fmt = (v, c, dp = c.dp) => `${lead(v, c)}${round(v, dp)}${c.postfix}`;
   /** A property's number with the build's stats applied (DL.build, set by the build editor):
    *  spirit scaling first, then the percentage bonuses to durations, ranges and radii.
    *  Returns the steps too, for the breakdown. */
@@ -98,17 +101,19 @@
    *  stat comes from, and the total, to two decimals. */
   function formulaTip(p) {
     const c = p.calc;
-    const two = (v, sign) => `${sign && v >= 0 ? "+" : ""}${round(v, 2)}${esc(c.postfix)}`;
+    const whole = (v) => `${lead(v, c)}${round(v, 2)}${esc(c.postfix)}`;
+    // What a stat adds: with a minus where the game shows the value as a reduction.
+    const added = (v) => `${v > 0 && c.sign === "-" ? "-" : v >= 0 ? "+" : ""}${round(v, 2)}${esc(c.postfix)}`;
     const row = (cls, name, value, extra = "") => `<div class="${cls}"><span class="f-name">${esc(name)}${extra}</span><span class="f-value">${value}</span></div>`;
     const r = calc(p);
-    const rows = [row("f-main", "Base", two(c.base, c.signed))];
+    const rows = [row("f-main", "Base", whole(c.base))];
     for (const st of r.steps) {
       const times = st.kind === "mod" ? `<small>+${round(st.pct, 2)}%</small>` : `<small>x (${esc(st.times)})</small>`;
       const zero = !st.add ? " f-zero" : "";
-      rows.push(row(`f-main f-${esc(st.kind)}${zero}`, st.name, st.add === null ? "–" : two(st.add, true), times));
+      rows.push(row(`f-main f-${esc(st.kind)}${zero}`, st.name, st.add === null ? "–" : added(st.add), times));
       for (const [name, value, unit] of st.sources || []) rows.push(row("f-sub", name, `${value > 0 ? "+" : ""}${round(value, 2)}${esc(unit || "")}`));
     }
-    return `<div class="formula"><h4>${esc(p.label)}</h4>${rows.join("")}${row("f-total", "Total", two(r.value, c.signed))}</div>`;
+    return `<div class="formula"><h4>${esc(p.label)}</h4>${rows.join("")}${row("f-total", "Total", whole(r.value))}</div>`;
   }
 
   const hint = (list) => (list.some((s) => [...s.big, ...s.lines].some((p) => p.calc))

@@ -419,7 +419,7 @@ def test_scaling_and_distances():
     # The game's "x2.2" on the damage: what each point of spirit power adds.
     assert props["Damage"]["value"] == "65"
     assert props["Damage"]["scale"] == {"stat": "spirit", "per": 2.2, "text": "2.2"}
-    assert props["Damage"]["calc"] == {"base": 65.0, "signed": False, "postfix": "", "mods": {}, "dp": 1}
+    assert props["Damage"]["calc"] == {"base": 65.0, "sign": "", "postfix": "", "mods": {}, "dp": 1}
     # A build's ability duration bonus applies to durations, whatever else they scale with.
     assert props["SleepDuration"]["calc"]["mods"] == {"duration": 1.0} and "scale" not in props["SleepDuration"]
     assert props["SleepWakeUpDelay"]["scale"]["stat"] == "spirit"
@@ -486,7 +486,10 @@ def test_scaling_and_distances():
         ],
     }
     up = gamedata._ability(ability)["upgrades"][0]
-    assert up["bonuses"] == ["Impact Damage +0.25 Scaling", "Impact Damage +2m"]
+    assert up["bonuses"] == ["+0.25 Impact Damage Scaling", "+2m Impact Damage"]
+    assert up["text"] == (
+        '<span class="highlight">+0.25</span> Impact Damage Scaling<br><span class="highlight">+2m</span> Impact Damage'
+    )
 
 
 def test_numbers_as_the_game_prints_them():
@@ -507,6 +510,7 @@ def test_numbers_as_the_game_prints_them():
             "value": "0.75",
             "label": "Sprint Speed",
             "postfix": "m/s",
+            "prefix": "{s:sign}",
             "provided_property_type": "MODIFIER_VALUE_SPRINT_SPEED",
         },
         # A distance without "m" is in engine units.
@@ -556,3 +560,36 @@ def test_imbue_targets_and_item_tiles(tmp_path):
     assert saved(dagger, EXTRA_HEALTH) == {"ability_id": EXTRA_HEALTH}  # not an imbue item
     cats = builds.categories({"mod_categories": [{"mods": [{"ability_id": TOXIC, "imbue_target_ability_id": dagger}]}]})
     assert cats[0]["mods"][0]["imbue"] == dagger
+
+
+def test_signs_as_the_game_writes_them():
+    """The game data says what stands before a number; a slow is written 40 and shown -40%."""
+    props = {
+        "Slow": {
+            "value": "40",
+            "label": "Move Speed",
+            "postfix": "%",
+            "prefix": "-",
+            "provided_property_type": "MODIFIER_VALUE_MOVEMENT_SPEED_SLOW_PERCENT",
+        },
+        "Speed": {
+            "value": "4m",
+            "label": "Move Speed",
+            "postfix": " m",
+            "prefix": "{s:sign}",
+            "provided_property_type": "MODIFIER_VALUE_MOVEMENT_SPEED_MAX",
+        },
+        "Shred": {"value": "-10", "label": "Bullet Resist", "postfix": "%", "prefix": "{s:sign}"},
+        "Amp": {"value": "7", "label": "Damage Amplification", "postfix": "%", "prefix": "+"},
+        # Given to the hero, but the game writes no sign for it.
+        "Reduction": {
+            "value": "15",
+            "label": "Damage Reduction",
+            "postfix": "%",
+            "provided_property_type": "MODIFIER_VALUE_ALL_DAMAGE_TAKEN_REDUCTION",
+        },
+    }
+    shown = {k: gamedata.prop(props, k)["value"] for k in props}
+    assert shown == {"Slow": "-40%", "Speed": "+4 m", "Shred": "-10%", "Amp": "+7%", "Reduction": "15%"}
+    # Summed into a build's stats, a slow counts as a reduction.
+    assert {s["key"]: s["value"] for s in gamedata.item_stats(props)}["Slow"] == -40
