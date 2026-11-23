@@ -22,14 +22,24 @@
   function abilityOrder(h, order) {
     const number = new Map(h.abilities.map((a, i) => [a.id, i + 1]));
     const out = ["## Ability order", ""];
-    if (!order.length) return [...out, "Not set."];
     out.push(`Abilities: ${h.abilities.map((a, i) => `${i + 1} = ${a.name}`).join(", ")}.`);
     out.push("Each step is an ability's number, then what is bought: its unlock, or its first, second or third upgrade (T1, T2, T3 for 1, 2 and 5 ability points).", "");
+    const unlocked = new Set();
     const tiers = new Map();
     order.forEach((s, i) => {
-      if (s.type !== UNLOCK) tiers.set(s.id, (tiers.get(s.id) || 0) + 1);
+      if (s.type === UNLOCK) unlocked.add(s.id);
+      else tiers.set(s.id, (tiers.get(s.id) || 0) + 1);
       out.push(`${i + 1}. ${number.get(s.id)}: ${s.type === UNLOCK ? "unlock" : `T${tiers.get(s.id)}`}`);
     });
+    // A full order is every ability's unlock and three upgrades. Short of that, say so and
+    // name what is still open, so a reader doesn't take a half-set order for a finished one.
+    const open = h.abilities.map((a, i) => {
+      const left = [...(unlocked.has(a.id) ? [] : ["unlock"]), ...["T1", "T2", "T3"].slice(tiers.get(a.id) || 0)];
+      return left.length ? `${i + 1}: ${left.join(", ")}` : "";
+    }).filter(Boolean);
+    const total = h.abilities.length * 4;
+    if (!order.length) out.push(`No steps set yet (a full order has ${total}: every ability's unlock and three upgrades).`);
+    else if (open.length) out.push("", `Not finished: ${order.length} of ${total} steps set. Still open: ${open.join("; ")}.`);
     return out;
   }
 
