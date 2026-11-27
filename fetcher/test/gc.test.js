@@ -401,7 +401,7 @@ test('publishing a hero build: the game message, authored by the bot, new then u
   const gc = session(client, { buildsQuota: quota, now: () => 1_800_000_000_000 });
   gc.start();
   const details = {
-    mod_categories: [{ name: 'Early', description: 'lane', optional: true, mods: [{ ability_id: 1548066885, annotation: 'first', sell_priority: 5 }] }],
+    mod_categories: [{ name: 'Early', description: 'lane', optional: true, width: 1030, mods: [{ ability_id: 1548066885, annotation: 'first', sell_priority: 5 }] }],
     ability_order: { currency_changes: [{ ability_id: 9, currency_type: 2, delta: -1 }, { ability_id: 9, currency_type: 1, delta: -1 }] },
   };
   assert.deepStrictEqual(await gc.publishBuild({ hero_id: 13, name: 'Test', description: 'd', details }), { hero_build_id: 777, version: 1 });
@@ -410,6 +410,7 @@ test('publishing a hero build: the game message, authored by the bot, new then u
   assert.strictEqual(b.author_account_id, client.steamID.accountid);
   assert.strictEqual(b.publish_timestamp, 1_800_000_000);
   assert.strictEqual(b.details.mod_categories[0].mods[0].annotation, 'first');
+  assert.strictEqual(b.details.mod_categories[0].width, 1030); // without it the game draws the category one item wide
   assert.strictEqual(b.details.mod_categories[0].optional, true);
   assert.deepStrictEqual(b.details.ability_order.currency_changes.map((c) => c.delta), [-1, -1]);
   assert.deepStrictEqual(await gc.publishBuild({ hero_id: 13, hero_build_id: 777, version: 1, name: 'Test', details }), { hero_build_id: 777, version: 2 });

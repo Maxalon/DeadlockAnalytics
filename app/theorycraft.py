@@ -297,7 +297,7 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
             "hero_id": row["hero_id"],
             "name": row["name"],
             "description": row["description"] or "",
-            "details": saved_details(row),
+            "details": builds.for_game(saved_details(row)),
         }
         if row["game_build_id"]:
             body["hero_build_id"] = row["game_build_id"]

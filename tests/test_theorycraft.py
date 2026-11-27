@@ -311,6 +311,9 @@ def test_publish_to_game(tmp_path):
     first = bot.published[0]
     assert first["hero_id"] == HAZE and first["name"] == "Pub" and "hero_build_id" not in first
     assert first["details"]["mod_categories"][0]["mods"] == [{"ability_id": TOXIC}]
+    # Each category gets the game's full-row width and no height: without a width the game
+    # draws a category one item wide and cuts the rest off.
+    assert all(cat["width"] == 1030 and "height" not in cat for cat in first["details"]["mod_categories"])
     c.post(f"/api/builds/{build_id}/publish")  # again: updates the same in-game build
     assert bot.published[1]["hero_build_id"] == 900 and bot.published[1]["version"] == 1
     assert editor_state(c.get(f"/planner/{build_id}").text)["game_build_id"] == 900

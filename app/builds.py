@@ -13,6 +13,11 @@ In the ability order, currency_type 2 is an ability unlock and 1 is ability poin
 
 `imbue_target_ability_id` is the game's "Imbue Target" for an imbue item: the hero ability the
 shop suggests imbuing, and the one Quickbuy picks by itself.
+
+`width` and `height` are the size of a category's box in the game's shop, in the game's layout
+pixels; the game's own editor writes them when a category is dragged to a size. A category
+without a width shrinks to a single item with the rest cut off, so every build sent to the game
+needs one (`for_game`).
 """
 
 UNLOCK, POINTS = 2, 1
@@ -23,6 +28,9 @@ MAX_NAME = 64
 MAX_DESCRIPTION = 2000
 MAX_NOTE = 200
 DEFAULT_CATEGORIES = ("Early game", "Mid game", "Late game", "Situational")
+# What the game's editor gives a new category: the whole width of the build panel, and no height,
+# which makes the box as tall as its items need.
+GAME_CATEGORY_WIDTH = 1030.0
 
 
 def details_of(build: dict) -> dict:
@@ -137,6 +145,16 @@ def clean_details(
         )
     changes = valid_ability_order((details.get("ability_order") or {}).get("currency_changes") or [], ability_ids)
     return {"mod_categories": cats, "ability_order": {"currency_changes": changes}}
+
+
+def for_game(details: dict) -> dict:
+    """The details as they go to the game: each category a row across the whole build panel, as
+    tall as its items, which is how the editor here shows them."""
+    cats = [
+        {k: v for k, v in c.items() if k != "height"} | {"width": GAME_CATEGORY_WIDTH}
+        for c in details.get("mod_categories") or []
+    ]
+    return {**details, "mod_categories": cats}
 
 
 def from_item_list(items: list[int]) -> dict:
