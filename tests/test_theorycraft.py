@@ -30,6 +30,7 @@ class GameApi(FakeApi):
         self.fail_builds = fail_builds
         self.asset_calls = 0
         self.build_calls = []
+        self.live_empty = False  # Valve's build service answering with no builds at all
 
     def steam_info(self):
         return {"client_version": self.version, "version_datetime": "2026-11-03T19:52:58"}
@@ -69,6 +70,8 @@ class GameApi(FakeApi):
     def builds_by_author(self, account_id):
         self._maybe_fail()
         self.build_calls.append(("live", account_id))
+        if self.live_empty:
+            return []
         older = copy.deepcopy(self.builds_list[0])
         older["hero_build"]["version"] -= 1
         older["hero_build"]["name"] = "old version"
@@ -341,9 +344,17 @@ def test_player_builds(tmp_path):
     c.get("/players/42/builds")
     assert len(api.build_calls) == n
     r = c.post("/players/42/builds/refresh", follow_redirects=False)
-    assert r.status_code == 303 and api.build_calls[-1] == ("live", 42)
+    assert r.status_code == 303 and ("live", 42) in api.build_calls[n:]
     page = c.get("/players/42/builds").text
     assert "old version" not in page and "Asked Steam" in page
+    # Steam answers with an empty list at times, also for players who have builds: the list
+    # stays as deadlock-api has it, and the page says that nothing came from Steam.
+    api.live_empty = True
+    r = c.post("/players/42/builds/refresh", follow_redirects=False)
+    assert r.status_code == 303 and "error=" in r.headers["location"]
+    page = c.get(r.headers["location"]).text
+    assert BUILDS[0]["hero_build"]["name"] in page and "returned no builds" in page
+    assert "From deadlock-api" in page and "Asked Steam" not in page
     assert c.get("/players/7/builds").status_code == 404  # only tracked players
 
 

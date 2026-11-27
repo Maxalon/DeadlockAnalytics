@@ -41,6 +41,10 @@ PUBLISH_ERRORS = {
 }
 API_DOWN = "deadlock-api didn't answer; try again in a moment."
 PLAYER_BUILDS_MAX_AGE_S = 86400
+STEAM_NO_BUILDS = (
+    "Steam's build service returned no builds for this player just now, so nothing new was added; "
+    "the list is deadlock-api's copy. Try again later."
+)
 CACHE_S = 300
 
 
@@ -445,10 +449,13 @@ def register(app: FastAPI, render: Callable, db: Callable, api: DeadlockApi, sta
             raise HTTPException(404)
         page_url = f"/players/{int(account['account_id'])}/builds"  # from the database row
         try:
-            jobs.refresh_player_builds(db(), api, account["account_id"], live=True)
+            answered = jobs.refresh_player_builds(db(), api, account["account_id"], live=True)
         except httpx.HTTPError as exc:
             log.warning("live builds of %s failed: %s", account_id, exc)
             return RedirectResponse(f"{page_url}?error={quote(API_DOWN)}", status_code=303)
+        if not answered:
+            log.warning("live builds of %s: Steam's build service returned none", account_id)
+            return RedirectResponse(f"{page_url}?error={quote(STEAM_NO_BUILDS)}", status_code=303)
         return RedirectResponse(page_url, status_code=303)
 
     # ---- patches -----------------------------------------------------------------------------

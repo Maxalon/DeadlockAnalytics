@@ -668,13 +668,14 @@ def refresh_game_data(conn: sqlite3.Connection, api: DeadlockApi, force: bool = 
     return True
 
 
-def refresh_player_builds(conn: sqlite3.Connection, api: DeadlockApi, account_id: int, live: bool = False) -> None:
-    """A tracked player's own in-game builds. live: ask Valve now (deadlock-api fetches them
-    from the game's build service); else deadlock-api's stored copy, newest version of each."""
-    if live:
-        builds = api.builds_by_author(account_id)
-    else:
-        builds = api.builds(author_id=account_id, only_latest="true", limit=200, sort_by="updated_at")
+def refresh_player_builds(conn: sqlite3.Connection, api: DeadlockApi, account_id: int, live: bool = False) -> bool:
+    """A tracked player's own in-game builds: deadlock-api's stored copy, and with `live` also
+    what Valve's build service says now (asked through deadlock-api), which knows builds made
+    minutes ago. The live answer only adds to the stored copy: the service at times answers
+    with an empty list for a player who has builds, and that must not empty the page.
+    Returns whether the live answer had any builds."""
+    steam = api.builds_by_author(account_id) if live else []
+    builds = [*api.builds(author_id=account_id, only_latest="true", limit=200, sort_by="updated_at"), *steam]
     latest: dict[int, dict] = {}
     for b in builds:  # by-author returns every version: keep the newest of each build
         hb = b.get("hero_build") or {}
@@ -684,5 +685,6 @@ def refresh_player_builds(conn: sqlite3.Connection, api: DeadlockApi, account_id
     with transaction(conn):
         conn.execute(
             "INSERT OR REPLACE INTO player_builds (account_id, fetched_at, source, json) VALUES (?, ?, ?, ?)",
-            (account_id, int(time.time()), "steam" if live else "search", json.dumps(list(latest.values()))),
+            (account_id, int(time.time()), "steam" if steam else "search", json.dumps(list(latest.values()))),
         )
+    return bool(steam)
